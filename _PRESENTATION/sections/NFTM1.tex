@@ -85,3 +85,53 @@ d^2u/dx^2\big|_{i=0}=\frac{u_1-2u_0+u_0}{\Delta x^2}=\frac{u_1-u_0}{\Delta x^2}
 
 % ===== Slide 5 =====
 
+\begin{secframe}
+\small
+\textcolor{red_unipd}{\Large NFTM1D — Fixed Diffusion Coefficient}
+\vspace{0.6em}
+
+\begin{alertblock}{Fixed Parameter}
+    In this case the diffusion coefficient $\alpha$ is constant (not trainable).
+
+    The model applies a deterministic rule analogous to an explicit integration step:
+    \[
+      U_{t+1}(x) \;=\; U_t(x) + \alpha\,\Delta t\,\frac{\partial^2 U_t(x)}{\partial x^2}.
+    \]
+\end{alertblock}
+
+\begin{block}{Read/Write head}
+\begin{align*}
+    Read : & \quad \nabla^2 U(x_i) \approx U_{i-1} - 2U_i + U_{i+1} \\
+    Write : & \quad \Delta U = \alpha \, (\text{laplacian})
+\end{align*}
+\end{block}
+
+
+\end{secframe}
+
+% ===== Slide 6 =====
+
+\begin{secframe}
+\small
+\textcolor{red_unipd}{\Large NFTM1D — Learned Coefficient}
+\vspace{0.6em}
+
+\begin{alertblock}{Learnable Parameter}
+    This extends NFTM1DBase by making the diffusion coefficient $\alpha$ a learnable parameter. Where, heteroscedastic loss used is:
+    \[
+        \mathcal{L}_{\text{hetero}} =
+        \frac{1}{2}\frac{(\Delta U_{\text{pred}} - \alpha \, \text{lap})^2}{\sigma^2}
+        + \frac{1}{2}\beta \log(\sigma^2)
+    \]
+
+\end{alertblock}
+
+\begin{block}{Read/Write head}
+\begin{align*}
+    Read : & r_t = \sum_i w_t(i) M_t(i) \quad become \quad \text{lap}_t(i) = U_{i-1} - 2U_i + U_{i+1} \\
+    Write : & \Delta U_t(i) = \alpha \cdot \text{lap}_t(i) \quad become \quad U_{t+1}(i) = U_t(i) + \Delta U_t(i)
+\end{align*}
+\end{block}
+
+
+\end{secframe}
