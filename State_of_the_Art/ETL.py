@@ -14,7 +14,7 @@ apiKey = 'your_API_key_granted_in_springernature_website'
 openaccess_client = openaccess.OpenAccessAPI(api_key = apiKey)
 
 # build your query
-query = "((keyword:'NTM' AND keyword:'NFTM') OR (keyword:'Neural Turing Machine' AND keyword:'Neural Field Turing Machine') AND type:{(Journal)} AND onlinedatefrom:2020-01-01 AND onlinedateto:2025-10-01"
+query = "((keyword:'NTM' AND keyword:'Neural Turing Machine') OR (keyword:'NFTM' OR keyword:'Neural Field Turing Machine') AND type:{(Journal)} AND onlinedatefrom:2020-01-01 AND onlinedateto:2025-10-01"
 
 result = openaccess_client.search(q=query, p=25, s=1, fetch_all=False, is_premium=False)
 
