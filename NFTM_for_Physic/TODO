@@ -1,0 +1,3 @@
+Represent the weight of each time step as vectors ( parameters for the tensors while doing matrix operation, grad=true in optimizer.step ) and add this in the trianing.
+Make sure to limite the contexte windows
+SSIM or PSNR loss 

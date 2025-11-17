@@ -308,8 +308,8 @@ if __name__ == "__main__":
         nu=0.1,
         speed=[1.0, 2.0],
         boundary_condition=bc_neumann_zero,
-        ic_kinds=["shock","rarefaction","sine","smooth"],
-        n_train=10, n_test=10,
+        ic_kinds=["sine","smooth"], # ["shock","rarefaction","sine","smooth"]
+        n_train=10, n_test=100,
         cfl_safety=1
     )
 
