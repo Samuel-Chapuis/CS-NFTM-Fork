@@ -223,9 +223,13 @@ def generate_dataset_burgers(
     boundary_condition=bc_periodic,
     ic_kinds=None,
     n_train=100, n_test=20,
-    cfl_safety=0.5
+    cfl_safety=0.5,
+    speed_random=False
 ):
-    """Tous les fichiers sont stockés dans generated_1d_burgers/{train,test}."""
+    """Tous les fichiers sont stockés dans generated_1d_burgers/{train,test}.
+    Si speed_random=True et speed est une liste de 2 éléments [min, max], 
+    alors les valeurs de speed seront échantillonnées aléatoirement entre min et max.
+    """
     train_dir = os.path.join(out_dir, "train")
     test_dir  = os.path.join(out_dir, "test")
     os.makedirs(train_dir, exist_ok=True)
@@ -235,6 +239,13 @@ def generate_dataset_burgers(
     xmaxs   = _tolist(x_max)
     stepsLs = _tolist(n_steps)
     speeds  = _tolist(speed)
+    
+    # Vérifier si on doit utiliser des valeurs aléatoires pour speed
+    if speed_random and len(speeds) == 2:
+        speed_min, speed_max = min(speeds), max(speeds)
+        use_random_speed = True
+    else:
+        use_random_speed = False
 
     if len(xmins) != len(xmaxs):
         if len(xmins) == 1:
@@ -245,35 +256,51 @@ def generate_dataset_burgers(
             raise ValueError("x_min et x_max doivent avoir la même longueur ou être scalaires.")
     x_pairs = list(zip(xmins, xmaxs))
 
-    def do_split(N, split_dir, xmin_val, xmax_val, nst_val, spd_val):
+    def do_split(N, split_dir, xmin_val, xmax_val, nst_val, spd_val_or_range):
         for i in range(N):
             grid0 = make_grid(nbx, xmin_val, xmax_val, dt, n_steps=int(nst_val))
             kind = None if ic_kinds is None else random.choice(ic_kinds)
+            
+            # Générer une valeur de speed aléatoire si nécessaire
+            if use_random_speed:
+                actual_speed = random.uniform(speed_min, speed_max)
+            else:
+                actual_speed = float(spd_val_or_range)
+            
             grid_i, U, kind_used = run_one_sim_burgers(
-                grid0, nu=float(nu), speed=float(spd_val),
+                grid0, nu=float(nu), speed=actual_speed,
                 ic_kind=kind, cfl_safety=cfl_safety, boundary_condition=boundary_condition
             )
 
-            tag = f"{kind_used}|x=[{xmin_val},{xmax_val}]|T={int(nst_val)}|v={float(spd_val)}"
+            tag = f"{kind_used}|x=[{xmin_val},{xmax_val}]|T={int(nst_val)}|v={actual_speed:.3f}"
             # 🔧 Ajoute x_min/x_max dans le nom de fichier pour éviter l'écrasement
             filename = (
                 f"sample_{i:04d}"
                 f"_x{float(xmin_val):+.2f}_{float(xmax_val):+.2f}"
-                f"_v{float(spd_val):.2f}"
+                f"_v{actual_speed:.3f}"
                 f"_T{int(nst_val)}.npz"
             )
 
             grid_i.save_npz(
                 os.path.join(split_dir, filename),
-                U, nu=float(nu), speed=float(spd_val), tag=tag
+                U, nu=float(nu), speed=actual_speed, tag=tag
             )
 
 
-    for (xmin, xmax) in x_pairs:
-        for nst in stepsLs:
-            for spd in speeds:
-                do_split(n_train, train_dir, xmin, xmax, nst, spd)
-                do_split(n_test,  test_dir,  xmin, xmax, nst, spd)
+    # Adapter la boucle selon le mode de génération de speed
+    if use_random_speed:
+        # Si on utilise des valeurs aléatoires, on ne fait qu'une seule itération
+        for (xmin, xmax) in x_pairs:
+            for nst in stepsLs:
+                do_split(n_train, train_dir, xmin, xmax, nst, None)
+                do_split(n_test,  test_dir,  xmin, xmax, nst, None)
+    else:
+        # Mode normal : itérer sur chaque valeur de speed
+        for (xmin, xmax) in x_pairs:
+            for nst in stepsLs:
+                for spd in speeds:
+                    do_split(n_train, train_dir, xmin, xmax, nst, spd)
+                    do_split(n_test,  test_dir,  xmin, xmax, nst, spd)
 
 
 def visualize_random_sample(out_dir="generated_1d_burgers/test", cmap="seismic", label="U", title_prefix="Burgers"):
@@ -306,7 +333,8 @@ if __name__ == "__main__":
         dt=5e-3,
         n_steps=[256],
         nu=0.1,
-        speed=[1.0, 2.0],
+        speed=[1.0, 5.0],
+        speed_random=True,  # Active la génération aléatoire entre 1.0 et 5.0
         boundary_condition=bc_neumann_zero,
         ic_kinds=["sine","smooth"], # ["shock","rarefaction","sine","smooth"]
         n_train=200, n_test=0,
