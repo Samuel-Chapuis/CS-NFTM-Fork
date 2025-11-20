@@ -1,0 +1,8 @@
+Represent the weight of each time step as vectors ( parameters for the tensors while doing matrix operation, grad=true in optimizer.step ) and add this in the trianing.
+Make sure to limite the contexte windows
+SSIM or PSNR loss 
+Take look at optuna
+try r^2
+calculate partial autocorelation for the number for the number of time steps (can be a variable for optuna)
+see TCN (time series CN) 
+see Immutation as an input (new feature)
