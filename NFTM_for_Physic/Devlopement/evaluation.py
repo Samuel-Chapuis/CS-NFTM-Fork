@@ -70,81 +70,81 @@ def r2_score(pred: torch.Tensor, target: torch.Tensor, eps: float = 1e-8) -> flo
 
 def generate_model_predictions(model, train_loader, device, patch_radius, verbose=True, chunk_size=3):
     """
-    Génère les prédictions d'un modèle pour un échantillon du train_loader.
-    Compatible avec CNN et RNN.
+    Generates model predictions for a sample from train_loader.
+    Compatible with CNN and RNN.
     
     Args:
-        model: Le modèle CNN ou RNN entraîné
-        train_loader: DataLoader contenant les données
-        device: Device PyTorch (cuda ou cpu)
-        patch_radius: Rayon des patches spatiaux
-        verbose: Affichage des informations de progression
-        chunk_size: Taille des chunks temporels pour RNN (ignoré pour CNN)
+        model: The trained CNN or RNN model
+        train_loader: DataLoader containing the data
+        device: PyTorch device (cuda or cpu)
+        patch_radius: Radius of spatial patches
+        verbose: Display progress information
+        chunk_size: Size of temporal chunks for RNN (ignored for CNN)
     
     Returns:
         tuple: (true_traj, pred_traj, nu_value)
-            - true_traj: Trajectoire réelle (T, N)
-            - pred_traj: Trajectoire prédite (T, N)
-            - nu_value: Valeur de viscosité utilisée
+            - true_traj: Real trajectory (T, N)
+            - pred_traj: Predicted trajectory (T, N)
+            - nu_value: Viscosity value used
     """
     from models import CNNControllerPatch, RNNControllerPatch
     from training import build_patches_from_sequence
     
-    # Préparation des données pour la prédiction
+    # Prepare data for prediction
     init_field, true_traj, nu = next(iter(train_loader))
-    true_traj = true_traj[0].to(device)  # Prendre le premier échantillon du batch
+    true_traj = true_traj[0].to(device)  # Take the first sample from batch
     nu_value = float(nu[0])
 
     if verbose:
-        print(f"Génération de prédictions pour nu = {nu_value:.4f}")
-        print(f"Shape de la trajectoire vraie: {true_traj.shape}")
-        print(f"Type de modèle: {type(model).__name__}")
+        print(f"Generating predictions for nu = {nu_value:.4f}")
+        print(f"True trajectory shape: {true_traj.shape}")
+        print(f"Model type: {type(model).__name__}")
 
-    # Génération des prédictions
+    # Generate predictions
     model.eval()
     with torch.no_grad():
         T, N = true_traj.shape
         preds = []
         
-        # Détection du type de modèle
+        # Detect model type
         is_rnn = isinstance(model, RNNControllerPatch)
         patch_size = 2 * patch_radius + 1
         
         if is_rnn:
-            # Pour RNN: utiliser des chunks temporels
+            # For RNN: use temporal chunks
             if verbose:
-                print(f"Mode RNN: Génération de {T-chunk_size} prédictions avec chunk_size={chunk_size}...")
+                print(f"RNN mode: Generating {T-chunk_size} predictions with chunk_size={chunk_size}...")
             
             for t in range(T - chunk_size):
                 if verbose and t % 10 == 0:
                     print(f"  Pas {t}/{T-chunk_size}")
                 
-                # Chunk temporel: (chunk_size, N)
+                # Temporal chunk: (chunk_size, N)
                 current_chunk = true_traj[t:t+chunk_size, :].unsqueeze(0)  # (1, chunk_size, N)
                 
-                # Extraction des patches pour chaque point spatial
+                # Extract patches for each spatial point
                 # patches: (1*N, chunk_size, patch_size)
                 patches = build_patches_from_sequence(current_chunk, patch_radius, patch_size)
                 
-                # Nu values pour tous les points spatiaux
+                # Nu values for all spatial points
                 nu_vals = torch.full((N, 1), nu_value, device=device)  # (N, 1)
                 
-                # Prédiction
+                # Prediction
                 pred_next = model(patches, nu_vals)  # (N,)
                 preds.append(pred_next)
                 
-            # Reconstruction de la trajectoire
+            # Reconstruct trajectory
             if preds:
                 pred_traj = torch.stack(preds, dim=0)  # (T-chunk_size, N)
-                # Ajouter les premiers pas de temps (ground truth)
+                # Add the first time steps (ground truth)
                 pred_traj = torch.cat([true_traj[:chunk_size, :], pred_traj], dim=0)  # (T, N)
             else:
-                pred_traj = true_traj.clone()  # Fallback si pas assez de données
+                pred_traj = true_traj.clone()  # Fallback if not enough data
                 
         else:
-            # Pour CNN: prédiction pas à pas
+            # For CNN: step-by-step prediction
             if verbose:
-                print(f"Mode CNN: Génération de {T-1} pas de temps...")
+                print(f"CNN mode: Generating {T-1} time steps...")
             
             for t in range(T - 1):
                 if verbose and t % 10 == 0:
@@ -161,40 +161,40 @@ def generate_model_predictions(model, train_loader, device, patch_radius, verbos
             pred_traj = torch.cat([true_traj[0:1, :], pred_traj], dim=0)      # (T, N)
 
     if verbose:
-        print(f"\nPrédictions générées: {pred_traj.shape}")
+        print(f"\nGenerated predictions: {pred_traj.shape}")
     
     return true_traj, pred_traj, nu_value
 
 
 def evaluate_model_on_sample(model, train_loader, device, patch_radius, max_val=1.0, val_range=1.0, chunk_size=3):
     """
-    Évalue un modèle sur un échantillon et retourne les métriques de performance.
-    Compatible avec CNN et RNN.
+    Evaluates a model on a sample and returns performance metrics.
+    Compatible with CNN and RNN.
     
     Args:
-        model: Le modèle CNN ou RNN entraîné
-        train_loader: DataLoader contenant les données
-        device: Device PyTorch (cuda ou cpu) 
-        patch_radius: Rayon des patches spatiaux
-        max_val: Valeur maximale pour le calcul du PSNR
-        val_range: Plage de valeurs pour le calcul du SSIM
-        chunk_size: Taille des chunks temporels pour RNN (ignoré pour CNN)
+        model: The trained CNN or RNN model
+        train_loader: DataLoader containing the data
+        device: PyTorch device (cuda or cpu) 
+        patch_radius: Radius of spatial patches
+        max_val: Maximum value for PSNR calculation
+        val_range: Value range for SSIM calculation
+        chunk_size: Size of temporal chunks for RNN (ignored for CNN)
     
     Returns:
-        dict: Dictionnaire contenant les métriques et les trajectoires
-            - 'true_traj': Trajectoire réelle
-            - 'pred_traj': Trajectoire prédite
-            - 'nu_value': Valeur de viscosité
-            - 'psnr': Score PSNR
-            - 'ssim': Score SSIM
-            - 'mse': Erreur quadratique moyenne
-            - 'r2': Score R²
+        dict: Dictionary containing metrics and trajectories
+            - 'true_traj': Real trajectory
+            - 'pred_traj': Predicted trajectory
+            - 'nu_value': Viscosity value
+            - 'psnr': PSNR score
+            - 'ssim': SSIM score
+            - 'mse': Mean squared error
+            - 'r2': R² score
     """
     true_traj, pred_traj, nu_value = generate_model_predictions(
         model, train_loader, device, patch_radius, verbose=False, chunk_size=chunk_size
     )
     
-    # Calcul des métriques
+    # Calculate metrics
     psnr_score = psnr(true_traj, pred_traj, max_val=max_val)
     ssim_score = ssim(true_traj, pred_traj, val_range=val_range)
     mse_score = torch.mean((true_traj - pred_traj)**2).item()
@@ -213,42 +213,42 @@ def evaluate_model_on_sample(model, train_loader, device, patch_radius, max_val=
 
 def display_evaluation_results(evaluation_results, show_plots=True):
     """
-    Affiche les métriques d'évaluation et les visualisations d'erreur.
+    Displays evaluation metrics and error visualizations.
     
     Args:
-        evaluation_results: Dictionnaire retourné par evaluate_model_on_sample()
-        show_plots: Si True, affiche les graphiques d'erreur
+        evaluation_results: Dictionary returned by evaluate_model_on_sample()
+        show_plots: If True, displays error plots
         
     Returns:
-        tuple: (true_traj, pred_traj) pour usage ultérieur si nécessaire
+        tuple: (true_traj, pred_traj) for later use if needed
     """
     true_traj = evaluation_results['true_traj']
     pred_traj = evaluation_results['pred_traj']
     
-    print(f"Métriques d'évaluation:")
+    print(f"Evaluation metrics:")
     print(f"  - PSNR: {evaluation_results['psnr']:.3f} dB")
     print(f"  - SSIM: {evaluation_results['ssim']:.3f}")
     print(f"  - MSE: {evaluation_results['mse']:.6f}")
     print(f"  - R²: {evaluation_results['r2']:.4f}")
     
     if show_plots:
-        # Visualisation des erreurs
+        # Error visualization
         error = torch.abs(true_traj - pred_traj)
         plt.figure(figsize=(12, 4))
         
         plt.subplot(1, 2, 1)
         plt.imshow(error.cpu().numpy(), aspect='auto', cmap='hot')
-        plt.colorbar(label='Erreur absolue')
-        plt.xlabel('Position spatiale')
-        plt.ylabel('Temps')
-        plt.title('Carte d\'erreur absolue')
+        plt.colorbar(label='Absolute error')
+        plt.xlabel('Spatial position')
+        plt.ylabel('Time')
+        plt.title('Absolute error map')
         
         plt.subplot(1, 2, 2)
         mean_error_per_time = torch.mean(error, dim=1).cpu().numpy()
         plt.plot(mean_error_per_time, 'r-', linewidth=2)
-        plt.xlabel('Temps')
-        plt.ylabel('Erreur moyenne')
-        plt.title('Évolution de l\'erreur dans le temps')
+        plt.xlabel('Time')
+        plt.ylabel('Mean error')
+        plt.title('Error evolution over time')
         plt.grid(True, alpha=0.3)
         
         plt.tight_layout()

@@ -7,13 +7,13 @@ from torch.utils.data import Dataset, DataLoader
 import matplotlib.pyplot as plt
 import random
 
-# -------- Dataset "simple" = version notebooks cnn/rnn --------
+# -------- Dataset "simple" = notebook cnn/rnn version --------
 
 class BurgersDatasetSimple(Dataset):
     """
-    Dataset proche de cnn.py/rnn.py :
-    - charge quelques fichiers .npz (un par viscosité)
-    - renvoie (initial_field, full_trajectory, nu)
+    Dataset similar to cnn.py/rnn.py:
+    - loads a few .npz files (one per viscosity)
+    - returns (initial_field, full_trajectory, nu)
     full_trajectory : (T, N)
     initial_field   : (N,)
     nu              : (1,)
@@ -25,7 +25,7 @@ class BurgersDatasetSimple(Dataset):
         for nu, path in files_by_nu.items():
             uu_tensor = np.load(str(Path(path).resolve()))["u"]  # (T, N)
             data_tensor = torch.tensor(uu_tensor, dtype=torch.float32)
-            self.trajectories.append(data_tensor)   # une seule traj par nu ici
+            self.trajectories.append(data_tensor)   # one single trajectory per nu here
             self.nu_values.append(nu)
 
     def __len__(self):
@@ -38,12 +38,12 @@ class BurgersDatasetSimple(Dataset):
         return initial_field, traj, nu
 
 
-# -------- Dataset "généré" = version sam_cnn --------
+# -------- Dataset "generated" = sam_cnn version --------
 
 class BurgersViscosityDataset(Dataset):
     """
-    Regroupe beaucoup de trajectoires par viscosité, comme dans sam_cnn.py.
-    Renvoie (initial_field, full_trajectory, nu).
+    Groups many trajectories by viscosity, like in sam_cnn.py.
+    Returns (initial_field, full_trajectory, nu).
     """
     def __init__(self, datasets: list[torch.Tensor], viscosities: list[float]):
         # datasets: list de tensors (num_samples, T, N)
@@ -67,7 +67,7 @@ class BurgersViscosityDataset(Dataset):
         return initial_field, full_trajectory, nu
 
 
-# --------- Helpers pour charger les .npz "sam_cnn" ---------
+# --------- Helpers to load the .npz "sam_cnn" files ---------
 
 def _extract_U_and_nu_from_npz(path: Path):
     data = np.load(str(path), allow_pickle=True)
@@ -98,15 +98,15 @@ def _extract_U_and_nu_from_npz(path: Path):
 
 def collect_generated_burgers(root_dir: str, history_len: int):
     """
-    Version simplifiée de collect_generated_burgers() de sam_cnn.py.
-    - Filtre les fichiers trop courts (T < history_len+1)
-    - Groupe par viscosité
-    - Aligne le temps par troncature et l'espace par padding/crop.
+    Simplified version of collect_generated_burgers() from sam_cnn.py.
+    - Filters files that are too short (T < history_len+1)
+    - Groups by viscosity
+    - Aligns time by truncation and space by padding/crop.
     """
     root = Path(root_dir)
     files = sorted(root.glob("**/*.npz"))
     if not files:
-        raise FileNotFoundError(f"Aucun .npz trouvé dans {root}")
+        raise FileNotFoundError(f"No .npz files found in {root}")
     MIN_T = history_len + 1
 
     groups = {}
@@ -141,13 +141,13 @@ def _align_array_to_shape(arr, target_T, target_N):
     if arr.ndim == 1:
         arr = arr[None, :]
     T, N = arr.shape
-    # temps : tronque si trop long
+    # time: truncate if too long
     if T > target_T:
         arr = arr[:target_T, :]
     elif T < target_T:
-        raise ValueError("T trop petit pour l'alignement")
+        raise ValueError("T too small for alignment")
 
-    # espace : pad symétrique ou crop
+    # space: symmetric pad or crop
     if N < target_N:
         pad = target_N - N
         left = pad // 2
@@ -161,7 +161,7 @@ def _align_array_to_shape(arr, target_T, target_N):
     return arr
 
 
-# --------- Fabriques de DataLoader ---------
+# --------- DataLoader factories ---------
 
 def create_simple_dataloader(
     files_by_nu: dict[float, str | Path],
@@ -194,11 +194,11 @@ def create_generated_dataloaders(
     return train_loader, test_loader
 
 
-# --------- Fonction pour regarder rapidement le dataset ---------
+# --------- Function to quickly look at the dataset ---------
 
 def show_random_sample(dataset, idx: int | None = None):
     """
-    Affiche la shape d'un exemple + un petit heatmap de la trajectoire.
+    Displays the shape of an example + a small heatmap of the trajectory.
     """
     if idx is None:
         idx = random.randint(0, len(dataset) - 1)

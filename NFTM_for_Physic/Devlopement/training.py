@@ -6,11 +6,11 @@ import torch.nn.functional as F
 from typing import Dict, List
 from models import CNNControllerPatch, RNNControllerPatch, CNNControllerHistory
 
-# ---------- Helpers d'extraction de patchs ----------
+# ---------- Patch extraction helpers ----------
 
 def extract_spatial_patches(field_batch, patch_radius: int = 1):
     """
-    Version CNN simple :
+    Simple CNN version:
     field_batch: (B, N)
     -> patches: (B, N, patch_size)
     """
@@ -24,7 +24,7 @@ def extract_spatial_patches(field_batch, patch_radius: int = 1):
 
 def build_patches_from_sequence(fields_seq, r: int, patch_size: int):
     """
-    Version sam_cnn :
+    sam_cnn version:
     fields_seq: (B, L, N) -> (B*N, L, patch_size)
     """
     B, L, N = fields_seq.shape
@@ -37,7 +37,7 @@ def build_patches_from_sequence(fields_seq, r: int, patch_size: int):
     patches_seq = torch.stack(patches_list, dim=2)          # (B, N, L, P)
     return patches_seq.reshape(B * N, L, patch_size)
 
-# ---------- Boucle d'entraînement pour le CNN "simple" ----------
+# ---------- Training loop for "simple" CNN ----------
 
 def train_cnn_patch(
     model: CNNControllerPatch,
@@ -47,8 +47,8 @@ def train_cnn_patch(
     patch_radius: int = 1,
 ):
     """
-    Entraînement CNN style cnn.py:
-    - On utilise le ground truth à t comme entrée (pas de vrai rollout auto-régressif ici).
+    CNN training cnn.py style:
+    - We use ground truth at t as input (no true auto-regressive rollout here).
     """
     model.to(device)
     model.train()
@@ -90,7 +90,7 @@ def train_cnn_patch(
     return epoch_losses
 
 
-# ---------- Boucle d'entraînement pour le RNN ----------
+# ---------- Training loop for RNN ----------
 
 def train_rnn_patch(
     model: RNNControllerPatch,
@@ -101,9 +101,9 @@ def train_rnn_patch(
     patch_radius: int = 1,
 ):
     """
-    Boucle inspirée de rnn.py :
-    - on prend des chunks temporels (chunk_size) comme input
-    - target: champ au temps t+chunk_size
+    Loop inspired by rnn.py:
+    - we take temporal chunks (chunk_size) as input
+    - target: field at time t+chunk_size
     """
     model.to(device)
     model.train()

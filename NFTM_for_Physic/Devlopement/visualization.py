@@ -5,7 +5,7 @@ import torch
 
 def plot_trajectories(true_traj: torch.Tensor, pred_traj: torch.Tensor, title_suffix: str = ""):
     """
-    true_traj, pred_traj : (T, N) (une seule trajectoire)
+    true_traj, pred_traj : (T, N) (single trajectory)
     """
     true_np = true_traj.cpu().numpy().T   # (N, T)
     pred_np = pred_traj.cpu().numpy().T

@@ -2,11 +2,11 @@
 import torch
 import torch.nn as nn
 
-# ---- CNN "local patch + viscosity" (version notebook CNN) ----
+# ---- CNN "local patch + viscosity" (notebook CNN version) ----
 
 class CNNControllerPatch(nn.Module):
     """
-    Patch 1D + viscosité -> valeur prédite au centre
+    1D Patch + viscosity -> predicted value at center
     patch: (B, patch_size)
     nu   : (B, 1)
     """
@@ -45,12 +45,12 @@ class CNNControllerPatch(nn.Module):
         return x.squeeze(1)                        # (B,)
 
 
-# ---- RNN controller (version notebook RNN) ----
+# ---- RNN controller (notebook RNN version) ----
 
 class RNNControllerPatch(nn.Module):
     """
-    Input: patch temporel (chunk_size, patch_size) + viscosité
-    -> prédiction scalaire.
+    Input: temporal patch (chunk_size, patch_size) + viscosity
+    -> scalar prediction.
     patch: (B, seq_len, patch_size)
     nu   : (B, 1)
     """
@@ -77,11 +77,11 @@ class RNNControllerPatch(nn.Module):
         return y.squeeze(1)
 
 
-# ---- CNN "HISTORY_LEN channels" (version sam_cnn) optionnelle ----
+# ---- CNN "HISTORY_LEN channels" (sam_cnn version) optional ----
 
 class CNNControllerHistory(nn.Module):
     """
-    CNN de sam_cnn.py : input (B*N, L, patch_size) avec L = HISTORY_LEN canaux.
+    CNN from sam_cnn.py: input (B*N, L, patch_size) with L = HISTORY_LEN channels.
     """
     def __init__(self, history_len: int, patch_size: int):
         super().__init__()
