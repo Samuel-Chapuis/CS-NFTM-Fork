@@ -49,12 +49,6 @@ runs/
 # !figures/
 # !figures/**
 
-# Dataset downloads
-data/
-datasets/
-cifar-10-*
-*.tar.gz
-*.zip
 
 # Metrics and analysis files
 metrics.json
