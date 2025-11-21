@@ -38,7 +38,7 @@ class BurgersDatasetSimple(Dataset):
         return initial_field, traj, nu
 
 
-# -------- Dataset "generated" = sam_cnn version --------
+# -------- BurgersViscosityDataset --------
 
 class BurgersViscosityDataset(Dataset):
     """
