@@ -77,29 +77,58 @@ class RNNControllerPatch(nn.Module):
         return y.squeeze(1)
 
 
-# ---- CNN "HISTORY_LEN channels" (sam_cnn version) optional ----
-
 class CNNControllerHistory(nn.Module):
     """
-    CNN from sam_cnn.py: input (B*N, L, patch_size) with L = HISTORY_LEN channels.
+    Input: temporal patch sequence + viscosity
+    patch_seq: (B, seq_len, patch_size)
+    nu       : (B, 1)
+    -> scalar prediction with learned temporal weights (attention).
     """
-    def __init__(self, history_len: int, patch_size: int):
+    def __init__(self, patch_size: int, hidden_size: int = 64):
         super().__init__()
-        self.conv1 = nn.Conv1d(in_channels=history_len, out_channels=8, kernel_size=3, padding=1)
-        self.act1 = nn.ReLU()
-        self.pool = nn.MaxPool1d(kernel_size=2, stride=1)
-        self.conv2 = nn.Conv1d(in_channels=8, out_channels=8, kernel_size=3, padding=1)
-        self.act2 = nn.ReLU()
-        self.spatial_reduce = nn.AdaptiveAvgPool1d(1)
-        self.output_layer = nn.Conv1d(in_channels=8, out_channels=1, kernel_size=1)
+        self.patch_size = patch_size
+        self.hidden_size = hidden_size
 
-    def forward(self, x):
-        # x: (B*N, L, patch_size)
-        x = self.conv1(x)
-        x = self.act1(x)
-        x = self.pool(x)
-        x = self.conv2(x)
-        x = self.act2(x)
-        x = self.spatial_reduce(x)
-        x = self.output_layer(x)  # (B*N, 1, 1)
-        return x.view(x.size(0))  # (B*N,)
+        # On encode chaque (patch + nu) en un embedding
+        self.embed = nn.Sequential(
+            nn.Linear(patch_size + 1, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+        )
+
+        # Score d'attention pour chaque time step
+        self.attn = nn.Linear(hidden_size, 1)
+
+        # Tête finale pour prédire le scalaire à partir du contexte agrégé
+        self.fc_out = nn.Sequential(
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(hidden_size, 1),
+        )
+
+    def forward(self, patch_seq, nu):
+        # patch_seq: (B, seq_len, patch_size)
+        # nu      : (B, 1)
+        B, L, P = patch_seq.shape
+        assert P == self.patch_size
+
+        # On répète nu sur la dimension temporelle
+        nu_expanded = nu.unsqueeze(1).expand(-1, L, 1)      # (B, L, 1)
+        x = torch.cat([patch_seq, nu_expanded], dim=-1)     # (B, L, P+1)
+
+        # Encodage pas de temps par pas de temps
+        h = self.embed(x)                                   # (B, L, hidden)
+
+        # Scores d'attention pour chaque time step
+        scores = self.attn(h).squeeze(-1)                   # (B, L)
+        weights = torch.softmax(scores, dim=-1)             # (B, L)
+
+        # Combinaison pondérée des embeddings temporels
+        context = (h * weights.unsqueeze(-1)).sum(dim=1)    # (B, hidden)
+
+        # Prédiction finale
+        y = self.fc_out(context)                            # (B, 1)
+        return y.squeeze(1)                                 # (B,)
