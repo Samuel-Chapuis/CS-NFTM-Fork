@@ -6,7 +6,6 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import matplotlib.pyplot as plt
 import random
-
 # -------- Dataset "simple" = notebook cnn/rnn version --------
 
 class BurgersDatasetSimple(Dataset):
@@ -18,7 +17,7 @@ class BurgersDatasetSimple(Dataset):
     initial_field   : (N,)
     nu              : (1,)
     """
-    def __init__(self, files_by_nu: dict[float, str | Path]):
+    def __init__(self, files_by_nu: dict):
         self.trajectories = []
         self.nu_values = []
 
@@ -164,7 +163,7 @@ def _align_array_to_shape(arr, target_T, target_N):
 # --------- DataLoader factories ---------
 
 def create_simple_dataloader(
-    files_by_nu: dict[float, str | Path],
+    files_by_nu: dict,
     batch_size: int,
     shuffle: bool = True,
 ):
@@ -196,12 +195,12 @@ def create_generated_dataloaders(
 
 # --------- Function to quickly look at the dataset ---------
 
-def show_random_sample(dataset, idx: int | None = None):
+def show_random_sample(dataset, idx: int):
     """
     Displays the shape of an example + a small heatmap of the trajectory.
     """
-    if idx is None:
-        idx = random.randint(0, len(dataset) - 1)
+    # if idx is None:
+    #     idx = random.randint(0, len(dataset) - 1)
     initial_field, traj, nu = dataset[idx]
     print(f"Sample {idx} | nu={float(nu):.4f}")
     print(" initial_field:", initial_field.shape)
