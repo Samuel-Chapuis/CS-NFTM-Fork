@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from typing import Dict, List
-from models import CNNControllerPatch, RNNControllerPatch, CNNControllerHistory
+from models import CNNControllerPatch, RNNControllerPatch, CNNControllerHistory, CNNSpaceTimeController
 
 # ---------- Patch extraction helpers ----------
 
@@ -93,7 +93,7 @@ def train_cnn_patch(
 # ---------- Training loop for RNN ----------
 
 def train_rnn_patch(
-    model: RNNControllerPatch,
+    model: nn.Module,
     dataloader,
     device: torch.device,
     chunk_size: int = 3,
@@ -151,3 +151,7 @@ def train_rnn_patch(
         print(f"[RNN] Epoch {epoch+1}/{num_epochs} - MSE: {avg_loss:.6e}")
 
     return epoch_losses
+
+
+# ---------- Training loop for CNN SpaceTimeController ----------
+

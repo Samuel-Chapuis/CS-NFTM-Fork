@@ -190,3 +190,84 @@ class CNNControllerHistory(nn.Module):
         # Prédiction finale
         y = self.fc_out(context)                            # (B, 1)
         return y.squeeze(1)                                 # (B,)
+    
+
+
+class CNNSpaceTimeController(nn.Module):
+    """
+    2D CNN sur (temps, espace) + viscosité.
+    Entrée:
+      - patch_seq : (B, L, P)   avec L = chunk_size (nb d'itérations passées),
+                                 P = patch_size (2*patch_radius+1)
+      - nu        : (B, 1)
+    Sortie:
+      - y         : (B,) valeur prédite au centre du patch à t+L
+    """
+    def __init__(
+        self,
+        patch_size: int,
+        hidden_channels: int = 64,
+        kernel_t: int = 3,
+        kernel_x: int = 3,
+    ):
+        super().__init__()
+        self.patch_size = patch_size
+
+        # padding "same" manuel pour être stable sur toutes les versions de PyTorch
+        pad_t = kernel_t // 2
+        pad_x = kernel_x // 2
+
+        self.conv1 = nn.Conv2d(
+            in_channels=2,  # champ + nu
+            out_channels=hidden_channels,
+            kernel_size=(kernel_t, kernel_x),
+            padding=(pad_t, pad_x),
+        )
+        self.bn1 = nn.BatchNorm2d(hidden_channels)
+        self.act1 = nn.ReLU()
+
+        self.conv2 = nn.Conv2d(
+            in_channels=hidden_channels,
+            out_channels=hidden_channels,
+            kernel_size=(3, 3),
+            padding=(1, 1),
+        )
+        self.bn2 = nn.BatchNorm2d(hidden_channels)
+        self.act2 = nn.ReLU()
+
+        self.pool = nn.AdaptiveMaxPool2d((1, 1))
+
+        self.fc = nn.Sequential(
+            nn.Flatten(start_dim=1),        # (B, hidden_channels)
+            nn.Linear(hidden_channels, hidden_channels),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(hidden_channels, 1),
+        )
+
+    def forward(self, patch_seq, nu):
+        """
+        patch_seq : (B, L, P)
+        nu        : (B, 1)
+        """
+        B, L, P = patch_seq.shape
+
+        # canal 1 : le champ (temps, espace)
+        x_field = patch_seq.view(B, 1, L, P)  # (B, 1, L, P)
+
+        # canal 2 : la viscosité broadcastée sur (L, P)
+        nu_plane = nu.view(B, 1, 1, 1).expand(-1, 1, L, P)  # (B, 1, L, P)
+
+        x = torch.cat([x_field, nu_plane], dim=1)  # (B, 2, L, P)
+
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.act1(x)
+
+        x = self.conv2(x)
+        x = self.bn2(x)
+        x = self.act2(x)
+
+        x = self.pool(x)                 # (B, hidden_channels, 1, 1)
+        x = self.fc(x)                   # (B, 1)
+        return x.squeeze(1)              # (B,)
