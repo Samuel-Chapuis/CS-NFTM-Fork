@@ -76,29 +76,13 @@ def generate_model_predictions(model, train_loader, device, patch_radius,
       - CNNControllerPatch (mode "1 time step")
       - RNNControllerPatch (mode séquentiel)
       - CNNControllerHistory (mode séquentiel avec contexte)
-
-    Args
-    ----
-    model        : modèle entraîné
-    train_loader : DataLoader
-    device       : 'cuda' ou 'cpu'
-    patch_radius : rayon spatial des patches
-    verbose      : affichage d'infos
-    chunk_size   : longueur du contexte temporel pour les modèles séquentiels
-
-    Returns
-    -------
-    true_traj : (T, N)   vérité terrain
-    pred_traj : (T, N)   prédictions du modèle
-    nu_value  : viscosité utilisée (float)
+      - CNNSpaceTimeController (mode séquentiel spatio-temporel)
     """
-    from models import CNNControllerPatch, RNNControllerPatch, CNNControllerHistory
     from training import build_patches_from_sequence, extract_spatial_patches
 
     # --- On récupère un batch et on ne garde que le premier exemple ---
     init_field, true_traj, nu = next(iter(train_loader))
-    # true_traj: (B, T, N) -> on prend le premier : (T, N)
-    true_traj = true_traj[0].to(device)
+    true_traj = true_traj[0].to(device)          # (T, N)
     nu_value = float(nu[0].item())
     T, N = true_traj.shape
 
@@ -110,21 +94,24 @@ def generate_model_predictions(model, train_loader, device, patch_radius,
     model.eval()
     patch_size = 2 * patch_radius + 1
 
-    # On identifie le type de modèle
-    is_cnn_patch = isinstance(model, CNNControllerPatch)
-    is_rnn_patch = isinstance(model, RNNControllerPatch)
-    is_cnn_history = isinstance(model, CNNControllerHistory)
+    # --- Détection par nom de classe, pas par isinstance ---
+    model_name = type(model).__name__
+    is_cnn_patch = (model_name == "CNNControllerPatch")
+    is_seq_model = model_name in [
+        "RNNControllerPatch",
+        "CNNControllerHistory",
+        "CNNSpaceTimeController",
+    ]
 
     preds = []
 
     with torch.no_grad():
 
         # ------------------------------------------------------
-        # 1) MODE SÉQUENTIEL : RNNControllerPatch ou CNNControllerHistory
+        # 1) MODE SÉQUENTIEL : RNN / CNNHistory / SpaceTimeCNN
         # ------------------------------------------------------
-        if is_rnn_patch or is_cnn_history:
+        if is_seq_model:
             if T <= chunk_size:
-                # pas assez de temps pour faire une vraie prédiction séquentielle
                 if verbose:
                     print(f"Warning: T={T} <= chunk_size={chunk_size}, "
                           "on renvoie la vérité terrain comme prédiction.")
@@ -141,10 +128,10 @@ def generate_model_predictions(model, train_loader, device, patch_radius,
                     # Historique temporel : (1, chunk_size, N)
                     current_chunk = true_traj[t:t + chunk_size, :].unsqueeze(0)
 
-                    # Patches spatio-temporels : (1*N, chunk_size, patch_size) = (N, L, P)
+                    # Patches spatio-temporels : (N, chunk_size, patch_size)
                     patches = build_patches_from_sequence(
                         current_chunk, patch_radius, patch_size
-                    )  # (N, chunk_size, patch_size)
+                    )
 
                     # Nu pour chaque patch spatial
                     nu_vals = torch.full(
@@ -154,13 +141,13 @@ def generate_model_predictions(model, train_loader, device, patch_radius,
                     )  # (N, 1)
 
                     # Prédiction du pas de temps suivant pour chaque point spatial
-                    pred_next = model(patches, nu_vals)  # (N,) ou (N,1) -> voir forward
+                    pred_next = model(patches, nu_vals)  # (N,)
                     preds.append(pred_next)
 
-                # empile sur le temps : (T - chunk_size, N)
+                # (T - chunk_size, N)
                 pred_future = torch.stack(preds, dim=0)
 
-                # on recolle les chunk_size premiers instants en vérité terrain
+                # On recolle les chunk_size premiers instants en vérité terrain
                 pred_traj = torch.cat(
                     [true_traj[:chunk_size, :], pred_future],
                     dim=0
@@ -177,47 +164,31 @@ def generate_model_predictions(model, train_loader, device, patch_radius,
                 if verbose and t % 10 == 0:
                     print(f"  step {t}/{T - 1}")
 
-                # état courant : (1, N)
-                field_t = true_traj[t].unsqueeze(0)
+                field_t = true_traj[t].unsqueeze(0)              # (1, N)
+                patches = extract_spatial_patches(field_t, patch_radius)  # (1, N, P)
+                patches_flat = patches.reshape(N, -1)            # (N, P)
 
-                # patches spatiaux : (1, N, P)
-                patches = extract_spatial_patches(field_t, patch_radius)
-
-                # flatten pour le CNN : (N, P)
-                patches_flat = patches.reshape(N, -1)
-
-                # viscosité pour chaque point
-                nu_vals = torch.full(
-                    (N, 1),
-                    nu_value,
-                    device=device
-                )  # (N, 1)
-
-                pred_next = model(patches_flat, nu_vals)  # (N,)
+                nu_vals = torch.full((N, 1), nu_value, device=device)
+                pred_next = model(patches_flat, nu_vals)         # (N,)
                 preds.append(pred_next)
 
-            # (T-1, N)
-            pred_future = torch.stack(preds, dim=0)
-            # on recolle le premier état exact
-            pred_traj = torch.cat(
-                [true_traj[0:1, :], pred_future],
-                dim=0
-            )  # (T, N)
+            pred_future = torch.stack(preds, dim=0)              # (T-1, N)
+            pred_traj = torch.cat([true_traj[0:1, :], pred_future], dim=0)
 
         # ------------------------------------------------------
         # 3) Autre type de modèle (par sécurité)
         # ------------------------------------------------------
         else:
             raise TypeError(
-                f"generate_model_predictions ne sait pas gérer le type de modèle {type(model).__name__} "
-                f"(attendus : CNNControllerPatch, RNNControllerPatch ou CNNControllerHistory)."
+                f"generate_model_predictions ne sait pas gérer le type de modèle {model_name} "
+                f"(attendus : CNNControllerPatch, RNNControllerPatch, "
+                f"CNNControllerHistory, CNNSpaceTimeController)."
             )
 
     if verbose:
         print(f"\nGenerated predictions shape: {pred_traj.shape}")
 
     return true_traj, pred_traj, nu_value
-
 
 def evaluate_model_on_sample(model, train_loader, device, patch_radius, max_val=1.0, val_range=1.0, chunk_size=3):
     """
