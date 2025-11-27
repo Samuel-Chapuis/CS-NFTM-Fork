@@ -6,3 +6,12 @@ try r^2
 calculate partial autocorelation for the number for the number of time steps (can be a variable for optuna)
 see TCN (time series CN) 
 see Immutation as an input (new feature)
+
+Draw float chart of each model ( tensor board to do so)
+Add a key querry value metrix for the attention 
+
+cursor
+
+Sperate train and test !
+Average the metric over all the images
+Show the weight the time steps
