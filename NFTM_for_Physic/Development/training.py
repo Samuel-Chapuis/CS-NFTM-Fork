@@ -153,5 +153,66 @@ def train_rnn_patch(
     return epoch_losses
 
 
-# ---------- Training loop for CNN SpaceTimeController ----------
+# ---------- General Training ----------
+
+def get_model_training_mode(model) -> str:
+    """
+    Détermine automatiquement le "mode" de training du modèle.
+
+    - 'cnn_patch' : modèles qui prennent un patch spatial (B, P) + nu -> scalaire
+                    (par ex. CNNControllerPatch, CNNController)
+    - 'seq'       : modèles séquentiels spatio-temporels
+                    (RNN, CNNHistory, CNNSpaceTime, Transformer, etc.)
+    """
+    name = type(model).__name__
+
+    # CNN 1-step (spatial uniquement)
+    if name in ["CNNControllerPatch", "CNNController"]:
+        return "cnn_patch"
+
+    # Par défaut, on considère que c'est un modèle séquentiel
+    return "seq"
+
+
+def train_model_auto(
+    model,
+    dataloader,
+    device: torch.device,
+    patch_radius: int,
+    num_epochs: int = 30,
+    chunk_size: int = 3,
+):
+    """
+    Enveloppe générique qui choisit la bonne boucle d'entraînement
+    en fonction du modèle.
+
+    Retourne:
+      - train_losses : liste des pertes par epoch
+      - mode         : 'cnn_patch' ou 'seq'
+    """
+    mode = get_model_training_mode(model)
+
+    if mode == "cnn_patch":
+        losses = train_cnn_patch(
+            model=model,
+            dataloader=dataloader,
+            device=device,
+            num_epochs=num_epochs,
+            patch_radius=patch_radius,
+        )
+    elif mode == "seq":
+        losses = train_rnn_patch(
+            model=model,
+            dataloader=dataloader,
+            device=device,
+            chunk_size=chunk_size,
+            num_epochs=num_epochs,
+            patch_radius=patch_radius,
+        )
+    else:
+        raise ValueError(
+            f"Unknown training mode '{mode}' for model {type(model).__name__}"
+        )
+
+    return losses, mode
 
