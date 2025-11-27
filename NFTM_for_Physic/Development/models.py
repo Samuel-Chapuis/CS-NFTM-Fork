@@ -9,7 +9,7 @@ import torch.nn as nn
 # x = batch_size (number of patches you process at once).
 # y = no. of output feature maps produced.
 # z = output sequence length.
-class CNNController_Rollout(nn.Module):
+class CNNController(nn.Module):
     def __init__(self, patch_size):
         super().__init__()
         self.patch_size = patch_size
