@@ -68,9 +68,19 @@ def plot_space_time_kernel(model,
     """
 
     if not hasattr(model, "conv1"):
-        raise ValueError("Le modèle fourni n'a pas d'attribut 'conv1'.")
+        print("plot_space_time_kernel: le modèle n'a pas d'attribut 'conv1' -> rien à afficher.")
+        return
 
-    weight = model.conv1.weight.detach().cpu().numpy()   # (C_out, C_in, k_t, k_x)
+    weight = model.conv1.weight.detach().cpu().numpy()
+
+    # On ne traite que le cas 2D (temps, espace)
+    if weight.ndim != 4:
+        print(
+            f"plot_space_time_kernel: conv1.weight a une shape {weight.shape} "
+            f"(attendu: 4D (C_out, C_in, k_t, k_x)). Modèle ignoré."
+        )
+        return
+
     C_out, C_in, k_t, k_x = weight.shape
 
     if channel_type == "field":

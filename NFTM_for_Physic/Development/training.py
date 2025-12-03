@@ -151,3 +151,7 @@ def train_rnn_patch(
         print(f"[RNN] Epoch {epoch+1}/{num_epochs} - MSE: {avg_loss:.6e}")
 
     return epoch_losses
+
+
+# ---------- Training loop for CNN SpaceTimeController ----------
+

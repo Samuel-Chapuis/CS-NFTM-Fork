@@ -96,12 +96,12 @@ def generate_model_predictions(model, train_loader, device, patch_radius,
 
     # --- Détection par nom de classe, pas par isinstance ---
     model_name = type(model).__name__
-    is_cnn_patch = (model_name == "CNNControllerPatch")
-    is_seq_model = model_name in [
-        "RNNControllerPatch",
-        "CNNControllerHistory",
-        "CNNSpaceTimeController",
-    ]
+
+    # CNN 1-step : patch spatial (B, P) + nu
+    is_cnn_patch = model_name in ["CNNControllerPatch", "CNNController"]
+
+    # Tout le reste = modèles séquentiels (RNN, CNNHistory, CNNSpaceTime, Transformer…)
+    is_seq_model = not is_cnn_patch
 
     preds = []
 
