@@ -1,0 +1,116 @@
+\section{NFTM with recurrent CNN}
+
+\begin{secframe}
+
+% CNN Controller of NFTM
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+    node distance=1.6cm,
+    box/.style={draw, rounded corners, align=center, minimum width=2.8cm, minimum height=1.1cm},
+    arrow/.style={->, thick}
+]
+
+% Inputs
+\node[box] (u) {$u_t(x)$\\$(B,N)$};
+\node[box, right=2.8cm of u] (nu) {$\nu$\\$(B,1)$};
+
+% Encoding
+\node[box, below=1.4cm of $(u)!0.5!(nu)$] (enc) {Input encoding\\
+$\begin{aligned}
+&u_t \to (B,1,N)\\
+&\nu \to (B,1,N)\\
+&\text{concat} \to (B,2,N)
+\end{aligned}$};
+
+\draw[arrow] (u) -- (enc);
+\draw[arrow] (nu) -- (enc);
+
+% Conv blocks
+\node[box, below=1.4cm of enc] (conv1) {Conv1d $2\to 32$\\$k=5$, pad=2\\ReLU};
+\node[box, below=of conv1] (conv2) {Conv1d $32\to 64$\\$k=5$, pad=2\\ReLU};
+\node[box, below=of conv2] (conv3) {Conv1d $64\to 32$\\$k=5$, pad=2\\ReLU};
+\node[box, below=of conv3] (convout) {Conv1d $32\to 1$\\$k=5$, pad=2};
+
+\draw[arrow] (enc) -- node[right]{\scriptsize $(B,2,N)$} (conv1);
+\draw[arrow] (conv1) -- node[right]{\scriptsize $(B,32,N)$} (conv2);
+\draw[arrow] (conv2) -- node[right]{\scriptsize $(B,64,N)$} (conv3);
+\draw[arrow] (conv3) -- node[right]{\scriptsize $(B,32,N)$} (convout);
+
+% Output
+\node[box, below=1.4cm of convout] (delta) {$\Delta u_t(x)$\\$(B,N)$};
+
+\draw[arrow] (convout) -- node[right]{\scriptsize squeeze canal} (delta);
+
+\end{tikzpicture}
+\caption{Arquitectura del CNNController. Dado el campo $u_t(x)$ y la viscosidad $\nu$, el controlador convolucional produce una actualización espacial $\Delta u_t(x)$ con la misma resolución.}
+\end{figure}
+
+\end{secframe}
+
+% NFTM using Recurrent CNN architecture
+\begin{secframe}
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+    node distance=1.8cm and 1.8cm,
+    box/.style={draw, rounded corners, align=center, minimum width=2.8cm, minimum height=1.1cm},
+    smallbox/.style={draw, rounded corners, align=center, minimum width=2.4cm, minimum height=0.9cm},
+    arrow/.style={->, thick}
+]
+
+% True trajectory nodes
+\node[box] (u0) {$u_t^{\text{true}}$};
+\node[box, right=3cm of u0] (uR) {$u_{t+R}^{\text{true}}$};
+
+% Rollout states
+\node[box, below=2.0cm of u0] (f0) {$f_t$};
+\node[box, right=2.5cm of f0] (f1) {$f_{t+1}$};
+\node[box, right=2.5cm of f1] (f2) {$\dots$};
+\node[box, right=2.5cm of f2] (fRm1) {$f_{t+R-1}$};
+\node[box, right=2.5cm of fRm1] (fRpred) {$f_{t+R}^{\text{pred}}$};
+
+% Connections from true to rollout start/end
+\draw[arrow] (u0) -- node[left]{\scriptsize init} (f0);
+\draw[arrow] (uR) -- node[right]{\scriptsize target} (fRpred);
+
+% CNNController blocks between rollout states
+\node[smallbox, above=0.9cm of $(f0)!0.5!(f1)$] (cnn1) {CNNController};
+\node[smallbox, above=0.9cm of $(f1)!0.5!(f2)$] (cnn2) {CNNController};
+\node[smallbox, above=0.9cm of $(f2)!0.5!(fRm1)$] (cnn3) {$\dots$};
+\node[smallbox, above=0.9cm of $(fRm1)!0.5!(fRpred)$] (cnn4) {CNNController};
+
+% Arrows rollout
+\draw[arrow] (f0) -- (cnn1);
+\draw[arrow] (cnn1) -- node[right]{\scriptsize $f_{t+1}=f_t+\Delta u_t$} (f1);
+
+\draw[arrow] (f1) -- (cnn2);
+\draw[arrow] (cnn2) -- node[right]{\scriptsize $f_{t+2}=f_{t+1}+\Delta u_{t+1}$} (f2);
+
+\draw[arrow] (f2) -- (cnn3);
+\draw[arrow] (cnn3) -- (fRm1);
+
+\draw[arrow] (fRm1) -- (cnn4);
+\draw[arrow] (cnn4) -- node[right]{\scriptsize $f_{t+R}^{\text{pred}}=f_{t+R-1}+\Delta u_{t+R-1}$} (fRpred);
+
+% Bracket / annotation for no_grad and grad
+\node[align=center, below=0.2cm of f1] (nogradlabel) {\scriptsize $R-1$ pasos \\ \scriptsize sin gradiente};
+\draw[decorate,decoration={brace,amplitude=4pt},yshift=-10pt]
+  ($(f0.south west)+(0,-0.2)$) -- ($(fRm1.south east)+(0,-0.2)$)
+  node[midway,below=6pt]{\scriptsize rollout interno (no\_grad)};
+
+\node[align=center, below=0.2cm of fRpred] (gradlabel) {\scriptsize 1 paso \\ \scriptsize con gradiente};
+\draw[decorate,decoration={brace,amplitude=4pt},yshift=-10pt]
+  ($(fRm1.south west)+(0,-0.2)$) -- ($(fRpred.south east)+(0,-0.2)$)
+  node[midway,below=6pt]{\scriptsize rollout step (con grad)};
+
+% Loss box
+\node[box, below=2.2cm of fRpred] (loss) {Loss\\$\mathcal{L}_t = \mathrm{MSE}\big(f_{t+R}^{\text{pred}},\,u_{t+R}^{\text{true}}\big)$};
+
+\draw[arrow] (fRpred) -- (loss);
+\draw[arrow] (uR) |- (loss);
+
+\end{tikzpicture}
+\caption{Esquema del NFTM con rollouts. Desde un estado verdadero $u_t^{\text{true}}$ se realiza un rollout autoregresivo de $R$ pasos usando el CNNController como integrador residual. Los primeros $R-1$ pasos se ejecutan sin gradiente, y el último paso (rollout step) se usa para definir la pérdida comparando con $u_{t+R}^{\text{true}}$.}
+\end{figure}
+\end{secframe}
