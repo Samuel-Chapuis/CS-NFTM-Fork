@@ -93,6 +93,96 @@ def get_loader_nu_values(loader):
                 continue
     return sorted(nus)
 
+
+def resolve_nu_target(
+    loader,
+    plot_nu=None,
+    selected_nu=None,
+    list_nus: bool = False,
+    verbose: bool = True,
+):
+    """Utility to resolve a nu target from loader and a plot specifier.
+
+    Arguments:
+      loader: data loader or iterable used to enumerate available nu values
+      plot_nu: one of None | float | 'min'|'max'|'idx:N'|'random'|'list'|str->float
+      selected_nu: if provided, priority target (returned directly)
+      list_nus: if True -> print the list of nus and return None
+      verbose: prints helpful messages
+
+    Returns:
+      float | None
+    """
+    nus = []
+    try:
+        nus = get_loader_nu_values(loader)
+    except Exception:
+        if verbose:
+            print("resolve_nu_target: unable to enumerate nus from loader")
+
+    if list_nus and verbose:
+        print(f"Loader contains {len(nus)} unique nu values: {nus}")
+
+    if selected_nu is not None:
+        if verbose:
+            print(f"Using provided selected_nu: {selected_nu}")
+        return float(selected_nu)
+
+    if plot_nu is None:
+        return None
+
+    # numeric types: choose closest if available
+    if isinstance(plot_nu, (int, float)):
+        if nus:
+            val = float(plot_nu)
+            closest = min(nus, key=lambda x: abs(x - val))
+            if abs(closest - val) > 1e-8 and verbose:
+                print(f"Requested nu {val} not in loader; using nearest available {closest}.")
+            return float(closest)
+        else:
+            return float(plot_nu)
+
+    if isinstance(plot_nu, str):
+        s = plot_nu.strip().lower()
+        if s == 'list':
+            # already printed nus above
+            return None
+        if s == 'min' and nus:
+            return float(min(nus))
+        if s == 'max' and nus:
+            return float(max(nus))
+        if s.startswith('idx:') and nus:
+            try:
+                idx = int(s.split(':', 1)[1])
+                if 0 <= idx < len(nus):
+                    return float(nus[idx])
+                else:
+                    if verbose:
+                        print(f"resolve_nu_target: index {idx} out of range (0..{len(nus)-1})")
+                    return None
+            except Exception:
+                if verbose:
+                    print("resolve_nu_target: invalid idx format; use 'idx:N'")
+                return None
+        if s == 'random' and nus:
+            import random
+            return float(random.choice(nus))
+        # fallback: try parse numeric string
+        try:
+            val = float(s)
+            if nus:
+                closest = min(nus, key=lambda x: abs(x - val))
+                if abs(closest - val) > 1e-8 and verbose:
+                    print(f"Requested nu {val} not in loader; using nearest available {closest}.")
+                return float(closest)
+            else:
+                return float(val)
+        except Exception:
+            if verbose:
+                print(f"resolve_nu_target: could not parse PLOT_NU string '{plot_nu}'")
+            return None
+
+
 # def generate_model_predictions(model, train_loader, device, patch_radius,
 #                                verbose: bool = True, chunk_size: int = 3):
 #     """
@@ -216,7 +306,7 @@ def get_loader_nu_values(loader):
 
 #     return true_traj, pred_traj, nu_value
 
-def evaluate_model_on_sample(model, train_loader, device, patch_radius, max_val=1.0, val_range=1.0, chunk_size=3):
+def evaluate_model_on_sample(model, train_loader, device, patch_radius, max_val=1.0, val_range=1.0, chunk_size=3, nu_target=None):
     """
     Evaluates a model on a sample and returns performance metrics.
     Compatible with CNN and RNN.
@@ -228,7 +318,8 @@ def evaluate_model_on_sample(model, train_loader, device, patch_radius, max_val=
         patch_radius: Radius of spatial patches
         max_val: Maximum value for PSNR calculation
         val_range: Value range for SSIM calculation
-        chunk_size: Size of temporal chunks for RNN (ignored for CNN)
+            chunk_size: Size of temporal chunks for RNN (ignored for CNN)
+            nu_target: If provided, tries to pick a sample with this viscosity value from the loader.
     
     Returns:
         dict: Dictionary containing metrics and trajectories
@@ -241,7 +332,13 @@ def evaluate_model_on_sample(model, train_loader, device, patch_radius, max_val=
             - 'r2': R² score
     """
     true_traj, pred_traj, nu_value = generate_model_predictions(
-        model, train_loader, device, patch_radius, verbose=False, chunk_size=chunk_size
+        model,
+        train_loader,
+        device,
+        patch_radius,
+        verbose=False,
+        chunk_size=chunk_size,
+        nu_target=nu_target,
     )
     
     # Calculate metrics
