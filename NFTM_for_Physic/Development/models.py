@@ -135,6 +135,65 @@ class RNNControllerPatch(nn.Module):
         return y.squeeze(1)
 
 
+
+
+
+    class RNNController(nn.Module):
+        def __init__(self, patch_size, hidden_size=64, rnn_type='LSTM', num_layers = 2):
+            super().__init__()
+            self.patch_size = patch_size
+            self.hidden_size = hidden_size
+            self.num_layers = num_layers
+
+
+            input_size = patch_size + 1  # patch values (features) + viscosity
+            
+            if rnn_type == 'LSTM':
+                self.rnn = nn.LSTM(input_size=input_size,
+                    hidden_size=hidden_size,
+                    num_layers=num_layers,
+                    batch_first=True,
+                    dropout=0.2 if num_layers > 1 else 0
+                )
+            elif rnn_type == 'GRU':
+                self.rnn = nn.GRU(input_size=input_size,
+                    hidden_size=hidden_size,
+                    num_layers=num_layers,
+                    batch_first=True,
+                    dropout=0.2 if num_layers > 1 else 0
+                    )
+            else:
+                print("RNN type must be 'LSTM' or 'GRU'")
+            
+            self.fc = nn.Sequential(
+                nn.Linear(hidden_size, hidden_size),
+                nn.ReLU(),
+                nn.Dropout(0.1),
+                nn.Linear(hidden_size, 32),
+                nn.ReLU(),
+                nn.Linear(32, 1)  # output prediction for patch center
+            )
+
+        def forward(self, patch, nu):
+            # patch: (batch_size, seq_len, patch_size)
+            # nu: (batch_size, 1)
+
+            # Expand nu to (batch_size, seq_len, 1) for concatenation
+            nu_expanded = nu.unsqueeze(1).expand(-1, patch.size(1), -1)  # (batch_size, seq_len, 1)
+            rnn_input = torch.cat([patch, nu_expanded], dim=-1) # shape: (batch_size, seq_len, patch_size + 1)
+            # RNN forward pass
+            output, _ = self.rnn(rnn_input)  # output: (batch_size, seq_len, hidden_size)
+            
+            # Use the last output (corresponding to center patch point) for prediction
+            last_output = output[:, -1, :] # (batch_size, hidden_size)
+
+            # Predict next center patch value
+            pred = self.fc(last_output) # shape: (batch_size, 1)
+            return pred.squeeze(1) # (batch_size,); batch_size = 1
+    
+
+
+
 class TransformerController(nn.Module):
     """
     Input: temporal patch sequence + viscosity
