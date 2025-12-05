@@ -15,3 +15,8 @@ cursor
 Sperate train and test !
 Average the metric over all the images
 Show the weight the time steps
+
+
+try to test the model with a new viscosity value
+
+Transformer vizualization from rnn paper

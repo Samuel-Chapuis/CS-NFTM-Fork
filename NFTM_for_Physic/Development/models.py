@@ -194,7 +194,7 @@ class RNNControllerPatch(nn.Module):
 
 
 
-class CNNControllerHistory(nn.Module):
+class TransformerController(nn.Module):
     """
     Input: temporal patch sequence + viscosity
     patch_seq: (B, seq_len, patch_size)
@@ -250,6 +250,10 @@ class CNNControllerHistory(nn.Module):
         y = self.fc_out(context)                            # (B, 1)
         return y.squeeze(1)                                 # (B,)
     
+# Backward compatibility alias: some notebooks and scripts referenced the old
+# class name `CNNControllerHistory`. After a refactor this class was renamed
+# to `TransformerController`. Keep an alias here so old imports keep working.
+CNNControllerHistory = TransformerController
 
 
 class CNNSpaceTimeController(nn.Module):
@@ -330,3 +334,32 @@ class CNNSpaceTimeController(nn.Module):
         x = self.pool(x)                 # (B, hidden_channels, 1, 1)
         x = self.fc(x)                   # (B, 1)
         return x.squeeze(1)              # (B,)
+
+
+class SingleChannelSpaceTimeCNN(nn.Module):
+    """
+    CNN spatio-temporel avec 1 seul canal de sortie à chaque couche.
+    Toujours très explicite (peu de poids), mais non linéaire.
+    """
+    def __init__(self, patch_size: int, history_len: int):
+        super().__init__()
+        self.patch_size = patch_size
+        self.history_len = history_len
+
+        self.conv1 = nn.Conv2d(2, 1, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(1, 1, kernel_size=3, padding=1)
+
+        self.act = nn.Tanh()  # ou ReLU, mais Tanh colle bien à des valeurs bornées
+        self.pool = nn.AdaptiveAvgPool2d((1, 1))
+
+    def forward(self, patch_seq, nu):
+        B, L, P = patch_seq.shape
+
+        x_field = patch_seq.view(B, 1, L, P)
+        nu_plane = nu.view(B, 1, 1, 1).expand(-1, 1, L, P)
+        x = torch.cat([x_field, nu_plane], dim=1)  # (B,2,L,P)
+
+        x = self.act(self.conv1(x))   # (B,1,L,P)
+        x = self.act(self.conv2(x))   # (B,1,L,P)
+        x = self.pool(x).view(B, 1)   # (B,1)
+        return x.squeeze(1)           # (B,)
