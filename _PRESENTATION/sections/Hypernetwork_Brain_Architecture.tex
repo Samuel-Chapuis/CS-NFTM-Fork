@@ -1,0 +1,46 @@
+\section{Hypernetwork 'Brain' Architecture}
+
+% ===== Slide 1: Architecture Diagram (3 IMAGES IN A ROW) =====
+\begin{frame}{Hypernetwork 'Brain' Architecture}
+
+% Three images side by side (equal width)
+\begin{minipage}[t]{0.32\textwidth}
+    \centering
+    \includegraphics[width=\textwidth,height=0.75\textheight,keepaspectratio]{images/architecture/Brain-architecture.png}
+\end{minipage}%
+\hfill
+\begin{minipage}[t]{0.32\textwidth}
+    \centering
+    \includegraphics[width=\textwidth,height=0.75\textheight,keepaspectratio]{images/architecture/Brain-architecture-1.png}
+\end{minipage}%
+\hfill
+\begin{minipage}[t]{0.32\textwidth}
+    \centering
+    \includegraphics[width=\textwidth,height=0.75\textheight,keepaspectratio]{images/architecture/Brain-architecture-2.png}
+\end{minipage}
+
+\end{frame}
+
+
+% ===== Slide 2: Main Ideas =====
+\begin{secframe}
+\small
+\textcolor{red_unipd}{\Large Main Ideas}
+
+\vspace{0.6em}
+
+\begin{alertblock}{Meta-Learning Framework}
+A large neural network (hypernetwork) learns to predict parameters for a smaller CNN that solves the PDE.
+\end{alertblock}
+
+\begin{block}{Architecture Components}
+\begin{itemize}
+  \item \textbf{Features:} Predicts context features from input field
+  \item \textbf{Dynamic Attention:} Transformer-style mechanism instead of fixed weights
+  \item \textbf{Hypernetwork (Brain):} Predicts equation parameters $\theta$ from context
+  \item \textbf{$F_\theta$ (Equation):} Small CNN applies predicted equation to field
+\end{itemize}
+\end{block}
+
+
+\end{secframe}
