@@ -5,112 +5,243 @@
 % CNN Controller of NFTM
 \begin{figure}[h]
 \centering
+
+% \begin{tikzpicture}[
+%   scale=0.6, every node/.style={transform shape},
+%   node distance=8mm,
+%   layer/.style={rectangle,draw,rounded corners,
+%                 minimum width=16mm,minimum height=6mm,align=center}
+% ]
+
+% \node[layer] (field) {$f_t \in \mathbb{R}^{N}$};
+% \node[layer, right=of field] (nu) {$\nu$};
+
+% \node[layer, below=of field] (cat) {concat \\ $(B,2,N)$};
+
+% \node[layer, below=of cat] (c1) {Conv1d 2$\to$32 \\ + ReLU};
+% \node[layer, below=of c1] (c2) {Conv1d 32$\to$64 \\ + ReLU};
+% \node[layer, below=of c2] (c3) {Conv1d 64$\to$32 \\ + ReLU};
+% \node[layer, below=of c3] (cout) {Conv1d 32$\to$1};
+
+% \node[layer, below=of cout] (delta) {$\Delta f_t$};
+% \node[layer, right=of delta] (sum) {$f_{t+1} = f_t + \Delta f_t$};
+
+% \draw[->] (field) -- (cat);
+% \draw[->] (nu.south) |- (cat.east);
+
+% \draw[->] (cat) -- (c1);
+% \draw[->] (c1) -- (c2);
+% \draw[->] (c2) -- (c3);
+% \draw[->] (c3) -- (cout);
+% \draw[->] (cout) -- (delta);
+
+% \draw[->] (field.east) |- (sum.north);
+% \draw[->] (delta.east) -- (sum.west);
+
+% \end{tikzpicture}
+
+
 \begin{tikzpicture}[
-    node distance=1.6cm,
-    box/.style={draw, rounded corners, align=center, minimum width=2.8cm, minimum height=1.1cm},
-    arrow/.style={->, thick}
+  scale=0.6, every node/.style={transform shape},
+  node distance=8mm,
+  layer/.style={rectangle,draw,rounded corners,
+                minimum width=16mm,minimum height=6mm,align=center}
 ]
 
-% Inputs
-\node[box] (u) {$u_t(x)$\\$(B,N)$};
-\node[box, right=2.8cm of u] (nu) {$\nu$\\$(B,1)$};
+% top row: nu -- field
+\node[layer] (nu) {$\nu$};
+\node[layer, right=of nu] (field) {$f_t \in \mathbb{R}^{N}$};
 
-% Encoding
-\node[box, below=1.4cm of $(u)!0.5!(nu)$] (enc) {Input encoding\\
-$\begin{aligned}
-&u_t \to (B,1,N)\\
-&\nu \to (B,1,N)\\
-&\text{concat} \to (B,2,N)
-\end{aligned}$};
+% conv stack below field
+\node[layer, below=of field] (cat) {concat \\ $(B,2,N)$};
+\node[layer, below=of cat] (c1) {Conv1d 2$\to$32 \\ + ReLU};
+\node[layer, below=of c1] (c2) {Conv1d 32$\to$64 \\ + ReLU};
+\node[layer, below=of c2] (c3) {Conv1d 64$\to$32 \\ + ReLU};
+\node[layer, below=of c3] (cout) {Conv1d 32$\to$1};
+\node[layer, below=of cout] (delta) {$\Delta f_t$};
 
-\draw[arrow] (u) -- (enc);
-\draw[arrow] (nu) -- (enc);
+% output box to the right, so skip can go right then down
+\node[layer, right=25mm of delta] (sum) {$f_{t+1} = f_t + \Delta f_t$};
 
-% Conv blocks
-\node[box, below=1.4cm of enc] (conv1) {Conv1d $2\to 32$\\$k=5$, pad=2\\ReLU};
-\node[box, below=of conv1] (conv2) {Conv1d $32\to 64$\\$k=5$, pad=2\\ReLU};
-\node[box, below=of conv2] (conv3) {Conv1d $64\to 32$\\$k=5$, pad=2\\ReLU};
-\node[box, below=of conv3] (convout) {Conv1d $32\to 1$\\$k=5$, pad=2};
+% connections into conv stack
+\draw[->] (field) -- (cat);
+\draw[->] (nu.south) |- (cat.west);
 
-\draw[arrow] (enc) -- node[right]{\scriptsize $(B,2,N)$} (conv1);
-\draw[arrow] (conv1) -- node[right]{\scriptsize $(B,32,N)$} (conv2);
-\draw[arrow] (conv2) -- node[right]{\scriptsize $(B,64,N)$} (conv3);
-\draw[arrow] (conv3) -- node[right]{\scriptsize $(B,32,N)$} (convout);
+\draw[->] (cat) -- (c1);
+\draw[->] (c1) -- (c2);
+\draw[->] (c2) -- (c3);
+\draw[->] (c3) -- (cout);
+\draw[->] (cout) -- (delta);
 
-% Output
-\node[box, below=1.4cm of convout] (delta) {$\Delta u_t(x)$\\$(B,N)$};
-
-\draw[arrow] (convout) -- node[right]{\scriptsize squeeze canal} (delta);
+% residual / skip: go right from f_t, then down to sum
+\draw[->] (field.east) -- ++(39mm,0) -- ++(0,-10mm) -- (sum.north);
+% delta to sum (short arrow)
+\draw[->] (delta.east) -- (sum.west);
 
 \end{tikzpicture}
-\caption{Arquitectura del CNNController. Dado el campo $u_t(x)$ y la viscosidad $\nu$, el controlador convolucional produce una actualización espacial $\Delta u_t(x)$ con la misma resolución.}
+\caption{CNN Controller Architecture.}
 \end{figure}
-
 \end{secframe}
+
+
+
+
+
 
 % NFTM using Recurrent CNN architecture
 \begin{secframe}
 \begin{figure}[h]
 \centering
+% \begin{tikzpicture}[
+%     node distance=1.8cm and 1.8cm,
+%     box/.style={draw, rounded corners, align=center, minimum width=2.8cm, minimum height=1.1cm},
+%     smallbox/.style={draw, rounded corners, align=center, minimum width=2.4cm, minimum height=0.9cm},
+%     arrow/.style={->, thick}
+% ]
+
+% % True trajectory nodes
+% \node[box] (u0) {$u_t^{\text{true}}$};
+% \node[box, right=3cm of u0] (uR) {$u_{t+R}^{\text{true}}$};
+
+% % Rollout states
+% \node[box, below=2.0cm of u0] (f0) {$f_t$};
+% \node[box, right=2.5cm of f0] (f1) {$f_{t+1}$};
+% \node[box, right=2.5cm of f1] (f2) {$\dots$};
+% \node[box, right=2.5cm of f2] (fRm1) {$f_{t+R-1}$};
+% \node[box, right=2.5cm of fRm1] (fRpred) {$f_{t+R}^{\text{pred}}$};
+
+% % Connections from true to rollout start/end
+% \draw[arrow] (u0) -- node[left]{\scriptsize init} (f0);
+% \draw[arrow] (uR) -- node[right]{\scriptsize target} (fRpred);
+
+% % CNNController blocks between rollout states
+% \node[smallbox, above=0.9cm of $(f0)!0.5!(f1)$] (cnn1) {CNNController};
+% \node[smallbox, above=0.9cm of $(f1)!0.5!(f2)$] (cnn2) {CNNController};
+% \node[smallbox, above=0.9cm of $(f2)!0.5!(fRm1)$] (cnn3) {$\dots$};
+% \node[smallbox, above=0.9cm of $(fRm1)!0.5!(fRpred)$] (cnn4) {CNNController};
+
+% % Arrows rollout
+% \draw[arrow] (f0) -- (cnn1);
+% \draw[arrow] (cnn1) -- node[right]{\scriptsize $f_{t+1}=f_t+\Delta u_t$} (f1);
+
+% \draw[arrow] (f1) -- (cnn2);
+% \draw[arrow] (cnn2) -- node[right]{\scriptsize $f_{t+2}=f_{t+1}+\Delta u_{t+1}$} (f2);
+
+% \draw[arrow] (f2) -- (cnn3);
+% \draw[arrow] (cnn3) -- (fRm1);
+
+% \draw[arrow] (fRm1) -- (cnn4);
+% \draw[arrow] (cnn4) -- node[right]{\scriptsize $f_{t+R}^{\text{pred}}=f_{t+R-1}+\Delta u_{t+R-1}$} (fRpred);
+
+% % Bracket / annotation for no_grad and grad
+% \node[align=center, below=0.2cm of f1] (nogradlabel) {\scriptsize $R-1$ pasos \\ \scriptsize sin gradiente};
+% \draw[decorate,decoration={brace,amplitude=4pt},yshift=-10pt]
+%   ($(f0.south west)+(0,-0.2)$) -- ($(fRm1.south east)+(0,-0.2)$)
+%   node[midway,below=6pt]{\scriptsize rollout interno (no\_grad)};
+
+% \node[align=center, below=0.2cm of fRpred] (gradlabel) {\scriptsize 1 paso \\ \scriptsize con gradiente};
+% \draw[decorate,decoration={brace,amplitude=4pt},yshift=-10pt]
+%   ($(fRm1.south west)+(0,-0.2)$) -- ($(fRpred.south east)+(0,-0.2)$)
+%   node[midway,below=6pt]{\scriptsize rollout step (con grad)};
+
+% % Loss box
+% \node[box, below=2.2cm of fRpred] (loss) {Loss\\$\mathcal{L}_t = \mathrm{MSE}\big(f_{t+R}^{\text{pred}},\,u_{t+R}^{\text{true}}\big)$};
+
+% \draw[arrow] (fRpred) -- (loss);
+% \draw[arrow] (uR) |- (loss);
+
+% \end{tikzpicture}
+
+
+% \begin{tikzpicture}[
+%   scale=0.8, every node/.style={transform shape},
+%   node distance=7mm,
+%   layer/.style={rectangle,draw,rounded corners,
+%                 minimum width=22mm,minimum height=6mm,align=center}
+% ]
+
+% % Inputs arriba
+% \node[layer] (nu) {$\nu$};
+% \node[layer, below=of nu] (ft) {$f_t$};
+
+% % Primer paso CNN
+% \node[layer, below=of ft] (cnn1) {CNN};
+% \node[layer, below=of cnn1] (f1) {$f_{t+1}$};
+
+% % Segundo paso CNN
+% \node[layer, below=of f1] (cnn2) {CNN};
+% \node[layer, below=of cnn2] (fk) {$f_{t+K}$};
+
+% % Ground truth y loss
+% \node[layer, below=of fk] (truefk) {$f_{t+K}^{\text{true}}$};
+% \node[layer, below=of truefk, minimum width=30mm] (loss)
+%     {$\mathcal{L} = \|f_{t+K} - f_{t+K}^{\text{true}}\|^2$};
+
+% % Conexiones hacia abajo
+% \draw[->] (nu) -- (ft);
+% \draw[->] (ft) -- (cnn1);
+% \draw[->] (cnn1) -- (f1);
+% \draw[->] (f1) -- (cnn2);
+% \draw[->] (cnn2) -- (fk);
+% \draw[->] (fk) -- (truefk);
+% \draw[->] (truefk) -- (loss);
+
+% % Flecha de la loss de vuelta al CNN (siguiente rollout / actualización)
+% \draw[->] (loss.east) -- ++(10mm,0) -- ++(0,40mm) -- (cnn1.east);
+
+% \end{tikzpicture}
+
+
 \begin{tikzpicture}[
-    node distance=1.8cm and 1.8cm,
-    box/.style={draw, rounded corners, align=center, minimum width=2.8cm, minimum height=1.1cm},
-    smallbox/.style={draw, rounded corners, align=center, minimum width=2.4cm, minimum height=0.9cm},
-    arrow/.style={->, thick}
+  scale=0.5, every node/.style={transform shape},
+  node distance=7mm,
+  layer/.style={rectangle,draw,rounded corners,
+                minimum width=26mm,minimum height=6mm,align=center}
 ]
 
-% True trajectory nodes
-\node[box] (u0) {$u_t^{\text{true}}$};
-\node[box, right=3cm of u0] (uR) {$u_{t+R}^{\text{true}}$};
+% Inputs arriba
+\node[layer] (nu) {$\nu$};
+\node[layer, right=of nu] (ft) {$f_t$};
 
-% Rollout states
-\node[box, below=2.0cm of u0] (f0) {$f_t$};
-\node[box, right=2.5cm of f0] (f1) {$f_{t+1}$};
-\node[box, right=2.5cm of f1] (f2) {$\dots$};
-\node[box, right=2.5cm of f2] (fRm1) {$f_{t+R-1}$};
-\node[box, right=2.5cm of fRm1] (fRpred) {$f_{t+R}^{\text{pred}}$};
+% Primer CNN
+\node[layer, below=of ft] (cnn1) {CNN};
+\node[layer, below=of cnn1] (f1) {$\hat f_{t+1}$};
 
-% Connections from true to rollout start/end
-\draw[arrow] (u0) -- node[left]{\scriptsize init} (f0);
-\draw[arrow] (uR) -- node[right]{\scriptsize target} (fRpred);
+% Segundo CNN
+\node[layer, below=of f1] (cnn2) {CNN};
+\node[layer, below=of cnn2] (f2) {$\hat f_{t+2}$};
 
-% CNNController blocks between rollout states
-\node[smallbox, above=0.9cm of $(f0)!0.5!(f1)$] (cnn1) {CNNController};
-\node[smallbox, above=0.9cm of $(f1)!0.5!(f2)$] (cnn2) {CNNController};
-\node[smallbox, above=0.9cm of $(f2)!0.5!(fRm1)$] (cnn3) {$\dots$};
-\node[smallbox, above=0.9cm of $(fRm1)!0.5!(fRpred)$] (cnn4) {CNNController};
+% Puntos suspensivos
+\node[layer, below=of f2, draw=none] (dots) {$\vdots$};
 
-% Arrows rollout
-\draw[arrow] (f0) -- (cnn1);
-\draw[arrow] (cnn1) -- node[right]{\scriptsize $f_{t+1}=f_t+\Delta u_t$} (f1);
+% Último CNN del rollout
+\node[layer, below=of dots] (cnnK) {CNN};
+\node[layer, below=of cnnK] (fk) {$\hat f_{t+K}$};
 
-\draw[arrow] (f1) -- (cnn2);
-\draw[arrow] (cnn2) -- node[right]{\scriptsize $f_{t+2}=f_{t+1}+\Delta u_{t+1}$} (f2);
+% Ground truth y loss
+\node[layer, below=of fk] (truefk) {$f_{t+K}^{\text{true}}$};
+\node[layer, below=of truefk, minimum width=34mm] (loss)
+    {$\mathcal{L} = \|f_{t+K} - f_{t+K}^{\text{true}}\|^2$};
 
-\draw[arrow] (f2) -- (cnn3);
-\draw[arrow] (cnn3) -- (fRm1);
+% Conexiones de entrada al primer CNN
+\draw[->] (ft) -- (cnn1);
+\draw[->] (nu.south) |- (cnn1.west);
 
-\draw[arrow] (fRm1) -- (cnn4);
-\draw[arrow] (cnn4) -- node[right]{\scriptsize $f_{t+R}^{\text{pred}}=f_{t+R-1}+\Delta u_{t+R-1}$} (fRpred);
+% Rollout hacia abajo
+\draw[->] (cnn1) -- (f1);
+\draw[->] (f1) -- (cnn2);
+\draw[->] (cnn2) -- (f2);
+\draw[->] (f2) -- (dots);
+\draw[->] (dots) -- (cnnK);
+\draw[->] (cnnK) -- (fk);
+\draw[->] (fk) -- (truefk);
+\draw[->] (truefk) -- (loss);
 
-% Bracket / annotation for no_grad and grad
-\node[align=center, below=0.2cm of f1] (nogradlabel) {\scriptsize $R-1$ pasos \\ \scriptsize sin gradiente};
-\draw[decorate,decoration={brace,amplitude=4pt},yshift=-10pt]
-  ($(f0.south west)+(0,-0.2)$) -- ($(fRm1.south east)+(0,-0.2)$)
-  node[midway,below=6pt]{\scriptsize rollout interno (no\_grad)};
-
-\node[align=center, below=0.2cm of fRpred] (gradlabel) {\scriptsize 1 paso \\ \scriptsize con gradiente};
-\draw[decorate,decoration={brace,amplitude=4pt},yshift=-10pt]
-  ($(fRm1.south west)+(0,-0.2)$) -- ($(fRpred.south east)+(0,-0.2)$)
-  node[midway,below=6pt]{\scriptsize rollout step (con grad)};
-
-% Loss box
-\node[box, below=2.2cm of fRpred] (loss) {Loss\\$\mathcal{L}_t = \mathrm{MSE}\big(f_{t+R}^{\text{pred}},\,u_{t+R}^{\text{true}}\big)$};
-
-\draw[arrow] (fRpred) -- (loss);
-\draw[arrow] (uR) |- (loss);
+% Flecha de la loss de vuelta al primer CNN (backprop / siguiente rollout)
+\draw[->] (loss.east) -- ++(10mm,0) -- ++(0,52mm) -- (cnn1.east);
 
 \end{tikzpicture}
-\caption{Esquema del NFTM con rollouts. Desde un estado verdadero $u_t^{\text{true}}$ se realiza un rollout autoregresivo de $R$ pasos usando el CNNController como integrador residual. Los primeros $R-1$ pasos se ejecutan sin gradiente, y el último paso (rollout step) se usa para definir la pérdida comparando con $u_{t+R}^{\text{true}}$.}
+
+\caption{NFTM with recurrent CNN architecture}
 \end{figure}
 \end{secframe}
