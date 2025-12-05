@@ -67,128 +67,154 @@ def r2_score(pred: torch.Tensor, target: torch.Tensor, eps: float = 1e-8) -> flo
     r2 = 1 - ssr / sst
     return r2.item()
 
-def generate_model_predictions(model, train_loader, device, patch_radius,
-                               verbose: bool = True, chunk_size: int = 3):
+
+def get_loader_nu_values(loader):
+    """Return a sorted list of unique nu values found in a DataLoader or dataset.
+
+    The loader can be a DataLoader or any iterable returning (init, traj, nu).
     """
-    Génère une trajectoire prédite à partir d'un batch du train_loader.
+    nus = set()
+    for batch in loader:
+        try:
+            nu = batch[2]
+        except Exception:
+            _, _, nu = batch
 
-    Compatible avec :
-      - CNNControllerPatch (mode "1 time step")
-      - RNNControllerPatch (mode séquentiel)
-      - CNNControllerHistory (mode séquentiel avec contexte)
-      - CNNSpaceTimeController (mode séquentiel spatio-temporel)
-    """
-    from training import build_patches_from_sequence, extract_spatial_patches
-
-    # --- On récupère un batch et on ne garde que le premier exemple ---
-    init_field, true_traj, nu = next(iter(train_loader))
-    true_traj = true_traj[0].to(device)          # (T, N)
-    nu_value = float(nu[0].item())
-    T, N = true_traj.shape
-
-    if verbose:
-        print(f"Generating predictions for nu = {nu_value:.4f}")
-        print(f"True trajectory shape: {true_traj.shape}")
-        print(f"Model type: {type(model).__name__}")
-
-    model.eval()
-    patch_size = 2 * patch_radius + 1
-
-    # --- Détection par nom de classe, pas par isinstance ---
-    model_name = type(model).__name__
-
-    # CNN 1-step : patch spatial (B, P) + nu
-    is_cnn_patch = model_name in ["CNNControllerPatch", "CNNController"]
-
-    # Tout le reste = modèles séquentiels (RNN, CNNHistory, CNNSpaceTime, Transformer…)
-    is_seq_model = not is_cnn_patch
-
-    preds = []
-
-    with torch.no_grad():
-
-        # ------------------------------------------------------
-        # 1) MODE SÉQUENTIEL : RNN / CNNHistory / SpaceTimeCNN
-        # ------------------------------------------------------
-        if is_seq_model:
-            if T <= chunk_size:
-                if verbose:
-                    print(f"Warning: T={T} <= chunk_size={chunk_size}, "
-                          "on renvoie la vérité terrain comme prédiction.")
-                pred_traj = true_traj.clone()
-            else:
-                if verbose:
-                    print(f"Sequential mode: {T - chunk_size} prédictions "
-                          f"avec chunk_size={chunk_size}")
-
-                for t in range(T - chunk_size):
-                    if verbose and t % 10 == 0:
-                        print(f"  step {t}/{T - chunk_size}")
-
-                    # Historique temporel : (1, chunk_size, N)
-                    current_chunk = true_traj[t:t + chunk_size, :].unsqueeze(0)
-
-                    # Patches spatio-temporels : (N, chunk_size, patch_size)
-                    patches = build_patches_from_sequence(
-                        current_chunk, patch_radius, patch_size
-                    )
-
-                    # Nu pour chaque patch spatial
-                    nu_vals = torch.full(
-                        (patches.size(0), 1),
-                        nu_value,
-                        device=device
-                    )  # (N, 1)
-
-                    # Prédiction du pas de temps suivant pour chaque point spatial
-                    pred_next = model(patches, nu_vals)  # (N,)
-                    preds.append(pred_next)
-
-                # (T - chunk_size, N)
-                pred_future = torch.stack(preds, dim=0)
-
-                # On recolle les chunk_size premiers instants en vérité terrain
-                pred_traj = torch.cat(
-                    [true_traj[:chunk_size, :], pred_future],
-                    dim=0
-                )  # (T, N)
-
-        # ------------------------------------------------------
-        # 2) MODE CNN 1-STEP : CNNControllerPatch
-        # ------------------------------------------------------
-        elif is_cnn_patch:
-            if verbose:
-                print(f"CNN mode: génération de {T - 1} pas de temps...")
-
-            for t in range(T - 1):
-                if verbose and t % 10 == 0:
-                    print(f"  step {t}/{T - 1}")
-
-                field_t = true_traj[t].unsqueeze(0)              # (1, N)
-                patches = extract_spatial_patches(field_t, patch_radius)  # (1, N, P)
-                patches_flat = patches.reshape(N, -1)            # (N, P)
-
-                nu_vals = torch.full((N, 1), nu_value, device=device)
-                pred_next = model(patches_flat, nu_vals)         # (N,)
-                preds.append(pred_next)
-
-            pred_future = torch.stack(preds, dim=0)              # (T-1, N)
-            pred_traj = torch.cat([true_traj[0:1, :], pred_future], dim=0)
-
-        # ------------------------------------------------------
-        # 3) Autre type de modèle (par sécurité)
-        # ------------------------------------------------------
+        if isinstance(nu, torch.Tensor):
+            for v in nu.reshape(-1).cpu().numpy():
+                try:
+                    nus.add(float(v))
+                except Exception:
+                    continue
         else:
-            raise TypeError(
-                f"generate_model_predictions ne sait pas gérer le type de modèle {model_name} "
-                f"(attendus : CNNControllerPatch, RNNControllerPatch, "
-                f"CNNControllerHistory, CNNSpaceTimeController)."
-            )
+            try:
+                nus.add(float(nu))
+            except Exception:
+                continue
+    return sorted(nus)
 
-    if verbose:
-        print(f"\nGenerated predictions shape: {pred_traj.shape}")
+# def generate_model_predictions(model, train_loader, device, patch_radius,
+#                                verbose: bool = True, chunk_size: int = 3):
+#     """
+#     Génère une trajectoire prédite à partir d'un batch du train_loader.
 
-    return true_traj, pred_traj, nu_value
+#     Compatible avec :
+#       - CNNControllerPatch (mode "1 time step")
+#       - RNNControllerPatch (mode séquentiel)
+#       - TransformerController (mode séquentiel avec contexte)
+#       - CNNSpaceTimeController (mode séquentiel spatio-temporel)
+#     """
+#     from training import build_patches_from_sequence, extract_spatial_patches
+
+#     # --- On récupère un batch et on ne garde que le premier exemple ---
+#     init_field, true_traj, nu = next(iter(train_loader))
+#     true_traj = true_traj[0].to(device)          # (T, N)
+#     nu_value = float(nu[0].item())
+#     T, N = true_traj.shape
+
+#     if verbose:
+#         print(f"Generating predictions for nu = {nu_value:.4f}")
+#         print(f"True trajectory shape: {true_traj.shape}")
+#         print(f"Model type: {type(model).__name__}")
+
+#     model.eval()
+#     patch_size = 2 * patch_radius + 1
+
+#     # --- Détection par nom de classe, pas par isinstance ---
+#     model_name = type(model).__name__
+
+#     # CNN 1-step : patch spatial (B, P) + nu
+#     is_cnn_patch = model_name in ["CNNControllerPatch", "CNNController"]
+
+#     # Tout le reste = modèles séquentiels (RNN, CNNHistory, CNNSpaceTime, Transformer…)
+#     is_seq_model = not is_cnn_patch
+
+#     preds = []
+
+#     with torch.no_grad():
+
+#         # ------------------------------------------------------
+#         # 1) MODE SÉQUENTIEL : RNN / CNNHistory / SpaceTimeCNN
+#         # ------------------------------------------------------
+#         if is_seq_model:
+#             if T <= chunk_size:
+#                 if verbose:
+#                     print(f"Warning: T={T} <= chunk_size={chunk_size}, "
+#                           "on renvoie la vérité terrain comme prédiction.")
+#                 pred_traj = true_traj.clone()
+#             else:
+#                 if verbose:
+#                     print(f"Sequential mode: {T - chunk_size} prédictions "
+#                           f"avec chunk_size={chunk_size}")
+
+#                 for t in range(T - chunk_size):
+#                     if verbose and t % 10 == 0:
+#                         print(f"  step {t}/{T - chunk_size}")
+
+#                     # Historique temporel : (1, chunk_size, N)
+#                     current_chunk = true_traj[t:t + chunk_size, :].unsqueeze(0)
+
+#                     # Patches spatio-temporels : (N, chunk_size, patch_size)
+#                     patches = build_patches_from_sequence(
+#                         current_chunk, patch_radius, patch_size
+#                     )
+
+#                     # Nu pour chaque patch spatial
+#                     nu_vals = torch.full(
+#                         (patches.size(0), 1),
+#                         nu_value,
+#                         device=device
+#                     )  # (N, 1)
+
+#                     # Prédiction du pas de temps suivant pour chaque point spatial
+#                     pred_next = model(patches, nu_vals)  # (N,)
+#                     preds.append(pred_next)
+
+#                 # (T - chunk_size, N)
+#                 pred_future = torch.stack(preds, dim=0)
+
+#                 # On recolle les chunk_size premiers instants en vérité terrain
+#                 pred_traj = torch.cat(
+#                     [true_traj[:chunk_size, :], pred_future],
+#                     dim=0
+#                 )  # (T, N)
+
+#         # ------------------------------------------------------
+#         # 2) MODE CNN 1-STEP : CNNControllerPatch
+#         # ------------------------------------------------------
+#         elif is_cnn_patch:
+#             if verbose:
+#                 print(f"CNN mode: génération de {T - 1} pas de temps...")
+
+#             for t in range(T - 1):
+#                 if verbose and t % 10 == 0:
+#                     print(f"  step {t}/{T - 1}")
+
+#                 field_t = true_traj[t].unsqueeze(0)              # (1, N)
+#                 patches = extract_spatial_patches(field_t, patch_radius)  # (1, N, P)
+#                 patches_flat = patches.reshape(N, -1)            # (N, P)
+
+#                 nu_vals = torch.full((N, 1), nu_value, device=device)
+#                 pred_next = model(patches_flat, nu_vals)         # (N,)
+#                 preds.append(pred_next)
+
+#             pred_future = torch.stack(preds, dim=0)              # (T-1, N)
+#             pred_traj = torch.cat([true_traj[0:1, :], pred_future], dim=0)
+
+#         # ------------------------------------------------------
+#         # 3) Autre type de modèle (par sécurité)
+#         # ------------------------------------------------------
+#         else:
+#             raise TypeError(
+#                 f"generate_model_predictions ne sait pas gérer le type de modèle {model_name} "
+#                 f"(attendus : CNNControllerPatch, RNNControllerPatch, "
+#                 f"TransformerController, CNNSpaceTimeController)."
+#             )
+
+#     if verbose:
+#         print(f"\nGenerated predictions shape: {pred_traj.shape}")
+
+#     return true_traj, pred_traj, nu_value
 
 def evaluate_model_on_sample(model, train_loader, device, patch_radius, max_val=1.0, val_range=1.0, chunk_size=3):
     """
@@ -279,3 +305,229 @@ def display_evaluation_results(evaluation_results, show_plots=True):
         plt.show()
     
     return true_traj, pred_traj
+
+
+
+
+def generate_model_predictions(model, train_loader, device, patch_radius,
+                               verbose: bool = True, chunk_size: int = 3, nu_target=None, list_nus: bool = False, fallback_to_first: bool = True):
+    """
+    Version "confort" pour la visu : prend le premier sample du loader,
+    appelle rollout_trajectory, et renvoie true_traj, pred_traj, nu.
+    """
+    # Small debugging helpers
+    if list_nus:
+        try:
+            nus = get_loader_nu_values(train_loader)
+            print(f"Loader contains {len(nus)} unique nu values: {nus}")
+        except Exception as e:
+            if verbose:
+                print(f"Unable to enumerate loader nu values: {e}")
+
+    # Pick a sample to visualize
+    if nu_target is None:
+        init_field, true_traj_batch, nu_batch = next(iter(train_loader))
+    else:
+        # try to find a batch where the first sample has the requested nu
+        found = False
+        for init_field, true_traj_batch, nu_batch in train_loader:
+            try:
+                this_nu = float(nu_batch[0].item())
+            except Exception:
+                this_nu = float(nu_batch)
+            if abs(this_nu - float(nu_target)) < 1e-8:
+                found = True
+                break
+        if not found:
+            if fallback_to_first:
+                if verbose:
+                    print(f"No sample with nu={nu_target} found in the loader; falling back to the first sample.")
+                init_field, true_traj_batch, nu_batch = next(iter(train_loader))
+            else:
+                raise ValueError(f"No sample with nu={nu_target} found in the loader")
+
+    # Convert the picked batch into single trajectory and nu_value
+    true_traj = true_traj_batch[0].to(device)   # (T, N)
+    try:
+        nu_value = float(nu_batch[0].item())
+    except Exception:
+        nu_value = float(nu_batch)
+
+    if verbose:
+        print(f"Generating predictions for nu = {nu_value:.4f}")
+        print(f"True trajectory shape: {true_traj.shape}")
+        print(f"Model type: {type(model).__name__}")
+
+    pred_traj = rollout_trajectory(
+        model=model,
+        true_traj=true_traj,
+        nu_value=nu_value,
+        device=device,
+        patch_radius=patch_radius,
+        chunk_size=chunk_size,
+        verbose=verbose,
+    )
+
+    return true_traj, pred_traj, nu_value
+
+def rollout_trajectory(
+    model,
+    true_traj: torch.Tensor,
+    nu_value: float,
+    device,
+    patch_radius: int,
+    chunk_size: int = 3,
+    verbose: bool = False,
+):
+    """
+    Reconstruit une trajectoire prédite à partir d'une trajectoire vraie.
+
+    true_traj : (T, N) sur device CPU ou GPU
+    nu_value  : scalaire (float)
+    Retour:
+      pred_traj : (T, N)
+    """
+    from training import build_patches_from_sequence, extract_spatial_patches
+
+    true_traj = true_traj.to(device)
+    T, N = true_traj.shape
+    patch_size = 2 * patch_radius + 1
+
+    model.eval()
+    model_name = type(model).__name__
+
+    # CNN 1-step : patch spatial (B, P) + nu
+    is_cnn_patch = model_name in ["CNNControllerPatch", "CNNController"]
+    # Tout le reste = modèles séquentiels (RNN, CNNHistory, SingleChannelSpaceTimeCNN, CNNSpaceTimeController, etc.)
+    is_seq_model = not is_cnn_patch
+
+    preds = []
+
+    with torch.no_grad():
+        if is_seq_model:
+            if T <= chunk_size:
+                if verbose:
+                    print(f"T={T} <= chunk_size={chunk_size}, on renvoie la vérité terrain.")
+                pred_traj = true_traj.clone()
+            else:
+                for t in range(T - chunk_size):
+                    if verbose and t % 10 == 0:
+                        print(f"  step {t}/{T - chunk_size}")
+
+                    # (1, L, N)
+                    current_chunk = true_traj[t:t+chunk_size, :].unsqueeze(0)
+
+                    # (N, L, P)
+                    patches = build_patches_from_sequence(
+                        current_chunk, patch_radius, patch_size
+                    )
+
+                    nu_vals = torch.full(
+                        (patches.size(0), 1),
+                        nu_value,
+                        device=device,
+                    )
+
+                    pred_next = model(patches, nu_vals)  # (N,)
+                    preds.append(pred_next)
+
+                pred_future = torch.stack(preds, dim=0)         # (T - chunk_size, N)
+                pred_traj = torch.cat(
+                    [true_traj[:chunk_size, :], pred_future],
+                    dim=0
+                )                                              # (T, N)
+
+        else:
+            # --- CNN 1-step (type CNNControllerPatch)
+            for t in range(T - 1):
+                if verbose and t % 10 == 0:
+                    print(f"  step {t}/{T - 1}")
+
+                field_t = true_traj[t].unsqueeze(0)           # (1, N)
+                patches = extract_spatial_patches(field_t, patch_radius)  # (1, N, P)
+                patches_flat = patches.reshape(N, -1)         # (N, P)
+
+                nu_vals = torch.full((N, 1), nu_value, device=device)
+                pred_next = model(patches_flat, nu_vals)      # (N,)
+                preds.append(pred_next)
+
+            pred_future = torch.stack(preds, dim=0)           # (T - 1, N)
+            pred_traj = torch.cat([true_traj[0:1, :], pred_future], dim=0)
+
+    return pred_traj
+
+
+def error_evolution_on_loader(
+    model,
+    data_loader,
+    device,
+    patch_radius: int,
+    chunk_size: int = 3,
+    show_plot: bool = True,
+):
+    """
+    Calcule l'évolution de l'erreur moyenne dans le temps, moyennée sur tout le data_loader.
+
+    Retourne:
+      mean_error_per_time : numpy array de shape (T,)
+    """
+    model.eval()
+
+    sum_error_per_time = None   # accumulation sur tous les samples
+    n_samples = 0
+    T_ref = None
+
+    for init_field, traj_batch, nu_batch in data_loader:
+        B, T, N = traj_batch.shape
+
+        if T_ref is None:
+            T_ref = T
+
+        for b in range(B):
+            true_traj = traj_batch[b].to(device)        # (T, N)
+            nu_value = float(nu_batch[b].item())
+
+            # Trajectoire prédite
+            pred_traj = rollout_trajectory(
+                model=model,
+                true_traj=true_traj,
+                nu_value=nu_value,
+                device=device,
+                patch_radius=patch_radius,
+                chunk_size=chunk_size,
+                verbose=False,
+            )
+
+            # On tronque si jamais T varie (par sécurité)
+            T_eff = min(true_traj.shape[0], pred_traj.shape[0], T_ref)
+            true_traj_eff = true_traj[:T_eff, :]
+            pred_traj_eff = pred_traj[:T_eff, :]
+
+            # Erreur absolue : (T_eff, N)
+            error = torch.abs(true_traj_eff - pred_traj_eff)
+
+            # Moyenne spatiale -> (T_eff,)
+            error_per_time = torch.mean(error, dim=1)   # (T_eff,)
+
+            if sum_error_per_time is None:
+                sum_error_per_time = torch.zeros_like(error_per_time)
+
+            sum_error_per_time[:T_eff] += error_per_time
+            n_samples += 1
+
+    if n_samples == 0:
+        raise RuntimeError("error_evolution_on_loader: no samples in data_loader")
+
+    mean_error_per_time = (sum_error_per_time / n_samples).cpu().numpy()
+
+    if show_plot:
+        plt.figure(figsize=(6, 4))
+        plt.plot(mean_error_per_time, 'r-', linewidth=2)
+        plt.xlabel('Time')
+        plt.ylabel('Mean absolute error')
+        plt.title('Error evolution over time (averaged over test set)')
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.show()
+
+    return mean_error_per_time

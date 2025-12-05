@@ -22,10 +22,22 @@ class BurgersDatasetSimple(Dataset):
         self.nu_values = []
 
         for nu, path in files_by_nu.items():
-            uu_tensor = np.load(str(Path(path).resolve()))["u"]  # (T, N)
+            data = np.load(str(Path(path).resolve()), allow_pickle=True)
+            # prefer 'nu' stored inside the file if present, otherwise use the mapping key
+            if "nu" in data.files:
+                file_nu = float(data["nu"])
+                # warn if the mapping key contradicts the file content
+                try:
+                    if abs(file_nu - float(nu)) > 1e-8:
+                        print(f"Warning: files_by_nu mapping key ({nu}) != file 'nu' ({file_nu}) for {path}")
+                except Exception:
+                    pass
+            else:
+                file_nu = float(nu)
+            uu_tensor = data["u"] if "u" in data.files else data[list(data.files)[0]]
             data_tensor = torch.tensor(uu_tensor, dtype=torch.float32)
             self.trajectories.append(data_tensor)   # one single trajectory per nu here
-            self.nu_values.append(nu)
+            self.nu_values.append(file_nu)
 
     def __len__(self):
         return len(self.trajectories)
@@ -39,7 +51,7 @@ class BurgersDatasetSimple(Dataset):
 
 # -------- BurgersViscosityDataset --------
 
-class BurgersViscosityDataset(Dataset):
+class BurgersViscosityDataset():
     """
     Groups many trajectories by viscosity, like in sam_cnn.py.
     Returns (initial_field, full_trajectory, nu).
@@ -111,7 +123,11 @@ def collect_generated_burgers(root_dir: str, history_len: int):
     groups = {}
     shapes = {}
     for p in files:
-        U, nu = _extract_U_and_nu_from_npz(p)
+        try:
+            U, nu = _extract_U_and_nu_from_npz(p)
+        except Exception as e:
+            print(f"❌ Skipping file (invalid or corrupted .npz): {p} | error: {e}")
+            continue
         T, N = U.shape
         if T < MIN_T:
             continue
@@ -133,6 +149,33 @@ def collect_generated_burgers(root_dir: str, history_len: int):
         datasets.append(arr_tensor)
         viscosities.append(float(nu))
     return datasets, viscosities
+
+
+def validate_npz_files(root_dir: str, max_examples: int | None = 20):
+    """
+    Scans .npz files under root_dir and returns two lists: good_files and bad_files.
+    Each item in good_files contains path, size (bytes), keys, and nu (if present).
+    Each item in bad_files contains path and error string.
+
+    This is useful to quickly locate corrupted or incompatible npz files.
+    """
+    from pathlib import Path
+    root = Path(root_dir)
+    files = sorted(root.glob("**/*.npz"))
+    good = []
+    bad = []
+    for i, p in enumerate(files):
+        try:
+            size = p.stat().st_size
+            data = np.load(str(p), allow_pickle=True)
+            keys = list(data.files)
+            nu = float(data["nu"]) if "nu" in data.files else None
+            good.append({"path": str(p), "size": size, "keys": keys, "nu": nu})
+        except Exception as e:
+            bad.append({"path": str(p), "error": str(e)})
+        if max_examples is not None and i >= max_examples:
+            break
+    return good, bad
 
 
 def _align_array_to_shape(arr, target_T, target_N):
@@ -178,6 +221,10 @@ def create_generated_dataloaders(
     batch_size: int,
     train_ratio: float = 0.8,
 ):
+    """
+    DEPRECATED: Use create_generated_dataloaders_from_folders for separate train/test folders.
+    Creates train/test loaders from a single directory with random split.
+    """
     datasets, viscosities = collect_generated_burgers(root_dir, history_len)
     full_dataset = BurgersViscosityDataset(datasets, viscosities)
     n_total = len(full_dataset)
@@ -190,6 +237,39 @@ def create_generated_dataloaders(
     )
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    return train_loader, test_loader
+
+
+def create_generated_dataloaders_from_folders(
+    train_dir: str,
+    test_dir: str,
+    history_len: int,
+    batch_size: int,
+):
+    """
+    Creates train/test loaders from separate train and test directories.
+    
+    Args:
+        train_dir: Path to the training data folder
+        test_dir: Path to the test data folder
+        history_len: Minimum history length required
+        batch_size: Batch size for DataLoaders
+        
+    Returns:
+        train_loader, test_loader
+    """
+    # Load training data
+    train_datasets, train_viscosities = collect_generated_burgers(train_dir, history_len)
+    train_dataset = BurgersViscosityDataset(train_datasets, train_viscosities)
+    
+    # Load test data
+    test_datasets, test_viscosities = collect_generated_burgers(test_dir, history_len)
+    test_dataset = BurgersViscosityDataset(test_datasets, test_viscosities)
+    
+    # Create DataLoaders
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    
     return train_loader, test_loader
 
 

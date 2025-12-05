@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from typing import Dict, List
-from models import CNNControllerPatch, RNNControllerPatch, CNNControllerHistory, CNNSpaceTimeController
+from models import CNNControllerPatch, RNNControllerPatch, TransformerController, CNNSpaceTimeController
 
 # ---------- Patch extraction helpers ----------
 

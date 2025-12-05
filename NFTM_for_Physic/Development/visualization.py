@@ -52,70 +52,105 @@ def plot_losses(train_losses, test_losses=None, title: str = "Loss per epoch"):
     plt.show()
 
 
-def plot_space_time_kernel(model,
-                           channel_type: str = "field",
-                           out_channel: int | None = None,
-                           cmap: str = "bwr"):
+def plot_space_time_kernel(
+    model,
+    layer_name: str = "conv1",
+    channel_type: str = "field",
+    out_channel: int | None = None,
+    cmap: str = "bwr",
+):
     """
-    Visualise le noyau spatio-temporel de la première couche conv (conv1)
-    d'un modèle type CNNSpaceTimeController.
+    Visualise le noyau spatio-temporel d'une couche conv2d (par défaut `conv1`)
+    pour des modèles comme:
+      - SingleChannelSpaceTimeCNN (conv1 : 2 -> 1, kernel 3x3)
+      - CNNSpaceTimeController    (conv1 : 2 -> C, kernel k_t x k_x)
 
-    - model : modèle entraîné, avec un attribut .conv1
+    - model        : modèle PyTorch (doit avoir un attribut layer_name)
+    - layer_name   : nom de la couche, ex. "conv1" ou "conv2"
     - channel_type : "field" (u) ou "nu" (viscosité)
-    - out_channel :
-        * None  -> moyenne des noyaux sur tous les filtres de sortie
-        * int   -> on affiche un filtre de sortie spécifique
+    - out_channel  :
+        * None -> moyenne sur tous les filtres de sortie
+        * int  -> un filtre de sortie spécifique
     """
 
-    if not hasattr(model, "conv1"):
-        print("plot_space_time_kernel: le modèle n'a pas d'attribut 'conv1' -> rien à afficher.")
+    if not hasattr(model, layer_name):
+        print(
+            f"plot_space_time_kernel: le modèle n'a pas de couche '{layer_name}'. "
+            "Rien à afficher."
+        )
         return
 
-    weight = model.conv1.weight.detach().cpu().numpy()
+    layer = getattr(model, layer_name)
+    if not hasattr(layer, "weight"):
+        print(
+            f"plot_space_time_kernel: la couche '{layer_name}' n'a pas d'attribut 'weight'. "
+            "Rien à afficher."
+        )
+        return
 
-    # On ne traite que le cas 2D (temps, espace)
+    weight = layer.weight.detach().cpu().numpy()
+    # On ne traite que les conv 2D: (C_out, C_in, k_t, k_x)
     if weight.ndim != 4:
         print(
-            f"plot_space_time_kernel: conv1.weight a une shape {weight.shape} "
-            f"(attendu: 4D (C_out, C_in, k_t, k_x)). Modèle ignoré."
+            f"plot_space_time_kernel: '{layer_name}.weight' a une shape {weight.shape}, "
+            "attendu: 4D (C_out, C_in, k_t, k_x). Modèle ignoré."
         )
         return
 
     C_out, C_in, k_t, k_x = weight.shape
 
+    # Sélection du canal d'entrée: champ ou viscosité
     if channel_type == "field":
         in_idx = 0
     elif channel_type == "nu":
-        in_idx = 1
+        if C_in < 2:
+            print(
+                f"plot_space_time_kernel: channel_type='nu' demandé mais la couche "
+                f"'{layer_name}' n'a que {C_in} canal(x) d'entrée. "
+                "On affiche le canal 0 à la place."
+            )
+            in_idx = 0
+        else:
+            in_idx = 1
     else:
         raise ValueError("channel_type doit être 'field' ou 'nu'.")
 
     if in_idx >= C_in:
-        raise ValueError(
-            f"Le canal d'entrée index {in_idx} n'existe pas dans conv1 "
-            f"(C_in={C_in}). Vérifie l'architecture."
+        print(
+            f"plot_space_time_kernel: index de canal d'entrée {in_idx} "
+            f">= C_in={C_in}. Rien à afficher."
         )
+        return
 
+    # Sélection du filtre de sortie
     if out_channel is None:
-        # moyenne sur les filtres de sortie -> vue globale du schéma numérique appris
-        kernel = weight[:, in_idx, :, :].mean(axis=0)    # (k_t, k_x)
-        title = f"Conv1 {channel_type} kernel (mean over {C_out} filters)"
+        # moyenne des noyaux sur tous les filtres de sortie
+        kernel = weight[:, in_idx, :, :].mean(axis=0)  # (k_t, k_x)
+        title = (
+            f"{layer_name} – {channel_type} kernel "
+            f"(mean over {C_out} filters)"
+        )
     else:
         if not (0 <= out_channel < C_out):
-            raise ValueError(f"out_channel doit être dans [0, {C_out-1}]")
-        kernel = weight[out_channel, in_idx, :, :]       # (k_t, k_x)
-        title = f"Conv1 {channel_type} kernel – filter {out_channel}"
+            print(
+                f"plot_space_time_kernel: out_channel={out_channel} hors bornes "
+                f"[0, {C_out-1}]. Rien à afficher."
+            )
+            return
+        kernel = weight[out_channel, in_idx, :, :]      # (k_t, k_x)
+        title = (
+            f"{layer_name} – {channel_type} kernel – filter {out_channel}"
+        )
+
+    # Plot
+    t_offsets = np.arange(k_t) - k_t // 2
+    x_offsets = np.arange(k_x) - k_x // 2
 
     plt.figure(figsize=(5, 4))
     plt.imshow(kernel, cmap=cmap, aspect="auto", origin="lower")
     plt.colorbar(label="weight")
-
-    # Axes = offsets temporels et spatiaux autour du centre
-    t_offsets = np.arange(k_t) - k_t // 2
-    x_offsets = np.arange(k_x) - k_x // 2
     plt.xticks(np.arange(k_x), x_offsets)
     plt.yticks(np.arange(k_t), t_offsets)
-
     plt.xlabel("space offset (Δx)")
     plt.ylabel("time offset (Δt)")
     plt.title(title)

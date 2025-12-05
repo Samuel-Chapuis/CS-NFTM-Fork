@@ -239,6 +239,8 @@ def generate_dataset_burgers(
     xmaxs   = _tolist(x_max)
     stepsLs = _tolist(n_steps)
     speeds  = _tolist(speed)
+    nus     = _tolist(nu)
+    print(f"Dataset generation: using nu values: {nus}")
     
     # Vérifier si on doit utiliser des valeurs aléatoires pour speed
     if speed_random and len(speeds) == 2:
@@ -256,7 +258,7 @@ def generate_dataset_burgers(
             raise ValueError("x_min et x_max doivent avoir la même longueur ou être scalaires.")
     x_pairs = list(zip(xmins, xmaxs))
 
-    def do_split(N, split_dir, xmin_val, xmax_val, nst_val, spd_val_or_range):
+    def do_split(N, split_dir, xmin_val, xmax_val, nst_val, spd_val_or_range, nu_val):
         for i in range(N):
             grid0 = make_grid(nbx, xmin_val, xmax_val, dt, n_steps=int(nst_val))
             kind = None if ic_kinds is None else random.choice(ic_kinds)
@@ -268,7 +270,7 @@ def generate_dataset_burgers(
                 actual_speed = float(spd_val_or_range)
             
             grid_i, U, kind_used = run_one_sim_burgers(
-                grid0, nu=float(nu), speed=actual_speed,
+                grid0, nu=float(nu_val), speed=actual_speed,
                 ic_kind=kind, cfl_safety=cfl_safety, boundary_condition=boundary_condition
             )
 
@@ -283,7 +285,7 @@ def generate_dataset_burgers(
 
             grid_i.save_npz(
                 os.path.join(split_dir, filename),
-                U, nu=float(nu), speed=actual_speed, tag=tag
+                U, nu=float(nu_val), speed=actual_speed, tag=tag
             )
 
 
@@ -292,15 +294,17 @@ def generate_dataset_burgers(
         # Si on utilise des valeurs aléatoires, on ne fait qu'une seule itération
         for (xmin, xmax) in x_pairs:
             for nst in stepsLs:
-                do_split(n_train, train_dir, xmin, xmax, nst, None)
-                do_split(n_test,  test_dir,  xmin, xmax, nst, None)
+                for nu_v in nus:
+                    do_split(n_train, train_dir, xmin, xmax, nst, None, nu_v)
+                    do_split(n_test,  test_dir,  xmin, xmax, nst, None, nu_v)
     else:
         # Mode normal : itérer sur chaque valeur de speed
         for (xmin, xmax) in x_pairs:
-            for nst in stepsLs:
-                for spd in speeds:
-                    do_split(n_train, train_dir, xmin, xmax, nst, spd)
-                    do_split(n_test,  test_dir,  xmin, xmax, nst, spd)
+                for nst in stepsLs:
+                    for spd in speeds:
+                        for nu_v in nus:
+                            do_split(n_train, train_dir, xmin, xmax, nst, spd, nu_v)
+                            do_split(n_test,  test_dir,  xmin, xmax, nst, spd, nu_v)
 
 
 def visualize_random_sample(out_dir="generated_1d_burgers/test", cmap="seismic", label="U", title_prefix="Burgers"):
@@ -326,19 +330,19 @@ def visualize_random_sample(out_dir="generated_1d_burgers/test", cmap="seismic",
 
 if __name__ == "__main__":
     generate_dataset_burgers(
-        out_dir="generated_1d_burgers",
+        out_dir="NFTM_for_Physic/generated_1d_burgers",
         nbx=128,
         x_min=[-5, -2],
         x_max=[5, 2],
         dt=5e-3,
         n_steps=[256],
-        nu=0.1,
+        nu=np.linspace(0.01, 0.5, 30),
         speed=[1.0, 5.0],
         speed_random=True,  # Active la génération aléatoire entre 1.0 et 5.0
         boundary_condition=bc_neumann_zero,
         ic_kinds=["sine","smooth"], # ["shock","rarefaction","sine","smooth"]
-        n_train=200, n_test=0,
+        n_train=0, n_test=50,
         cfl_safety=1
     )
 
-    visualize_random_sample("generated_1d_burgers/train")
+    # visualize_random_sample("NFTM_for_Physic/generated_1d_burgers/train")
