@@ -6,51 +6,34 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import matplotlib.pyplot as plt
 import random
-# -------- Dataset "simple" = notebook cnn/rnn version --------
-
-class BurgersDatasetSimple(Dataset):
-    """
-    Dataset similar to cnn.py/rnn.py:
-    - loads a few .npz files (one per viscosity)
-    - returns (initial_field, full_trajectory, nu)
-    full_trajectory : (T, N)
-    initial_field   : (N,)
-    nu              : (1,)
-    """
-    def __init__(self, files_by_nu: dict):
-        self.trajectories = []
-        self.nu_values = []
-
-        for nu, path in files_by_nu.items():
-            data = np.load(str(Path(path).resolve()), allow_pickle=True)
-            # prefer 'nu' stored inside the file if present, otherwise use the mapping key
-            if "nu" in data.files:
-                file_nu = float(data["nu"])
-                # warn if the mapping key contradicts the file content
-                try:
-                    if abs(file_nu - float(nu)) > 1e-8:
-                        print(f"Warning: files_by_nu mapping key ({nu}) != file 'nu' ({file_nu}) for {path}")
-                except Exception:
-                    pass
-            else:
-                file_nu = float(nu)
-            uu_tensor = data["u"] if "u" in data.files else data[list(data.files)[0]]
-            data_tensor = torch.tensor(uu_tensor, dtype=torch.float32)
-            self.trajectories.append(data_tensor)   # one single trajectory per nu here
-            self.nu_values.append(file_nu)
-
-    def __len__(self):
-        return len(self.trajectories)
-
-    def __getitem__(self, idx):
-        traj = self.trajectories[idx]   # (T, N)
-        initial_field = traj[0]         # (N,)
-        nu = torch.tensor([self.nu_values[idx]], dtype=torch.float32)
-        return initial_field, traj, nu
-
 
 # -------- BurgersViscosityDataset --------
+# Alex use
+class BurgersDataset(Dataset):
+    def __init__(self, files_burger):
+        # files_burger: dict {nu: path}
+        self.trajs = [] # list of (T,N)
+        self.nu_values = []   # scalar viscosities, one per traj
 
+        for nu, path in files_burger.items():
+            data = np.load(str(path.resolve()))['u'] # (100, T, N)
+            data_t = torch.tensor(data, dtype = torch.float32) # (100, T, N)
+    
+            for traj in data_t: # traj: (T,N)
+                self.trajs.append(traj)
+                self.nu_values.append(nu)
+        
+    def __len__(self):
+        return len(self.trajs)
+    
+    def __getitem__(self, idx):
+        # Returns: tuple (initial_field (N,), full_trajectory (T, N), viscosity (1,))
+        traj = self.trajs[idx]  # (T, N)
+        init_field = traj[0]  # (N,)
+        nu_val = torch.tensor([self.nu_values[idx]], dtype=torch.float32)
+        return init_field, traj, nu_val
+
+# Samuel use
 class BurgersViscosityDataset():
     """
     Groups many trajectories by viscosity, like in sam_cnn.py.
@@ -203,16 +186,6 @@ def _align_array_to_shape(arr, target_T, target_N):
     return arr
 
 
-# --------- DataLoader factories ---------
-
-def create_simple_dataloader(
-    files_by_nu: dict,
-    batch_size: int,
-    shuffle: bool = True,
-):
-    dataset = BurgersDatasetSimple(files_by_nu)
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
-    return loader
 
 
 def create_generated_dataloaders(
